@@ -2,7 +2,7 @@
 import logging
 from pprint import pformat
 from homeassistant.components.binary_sensor import BinarySensorEntity, DOMAIN as DOMAIN_BINARY_SENSOR
-from homeassistant.helpers.typing import HomeAssistantType
+from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
 from . import ExtaLifeChannel
@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """"setup via configuration.yaml not supported anymore"""
 
-async def async_setup_entry(hass: HomeAssistantType, config_entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
     """Set up Exta Life binary sensors based on existing config."""
 
     core = Core.get(config_entry.entry_id)

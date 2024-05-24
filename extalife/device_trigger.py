@@ -16,7 +16,6 @@ from homeassistant.const import (
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.helpers import config_validation as cv, entity_registry
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.helpers.typing import HomeAssistantType
 from homeassistant.config_entries import ConfigEntry
 
 from .helpers.const import DOMAIN, CONF_EXTALIFE_EVENT_UNIQUE_ID, TRIGGER_TYPE, TRIGGER_SUBTYPE

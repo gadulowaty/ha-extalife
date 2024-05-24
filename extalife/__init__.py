@@ -15,7 +15,8 @@ from homeassistant.helpers import entity_component
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.typing import HomeAssistantType, ConfigType
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.core import HomeAssistant
 from homeassistant.components.switch import DOMAIN as DOMAIN_SWITCH
 from homeassistant.components.light import DOMAIN as DOMAIN_LIGHT
 from homeassistant.components.binary_sensor import DOMAIN as DOMAIN_BINARY_SENSOR
@@ -157,7 +158,7 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
     return True
 
 
-async def async_setup(hass: HomeAssistantType, hass_config: ConfigType):
+async def async_setup(hass: HomeAssistant, hass_config: ConfigType):
     """Set up Exta Life component from configuration.yaml. This will basically
     forward the config to a Config Flow and will migrate to Config Entry"""
 
@@ -179,7 +180,7 @@ async def async_setup(hass: HomeAssistantType, hass_config: ConfigType):
     return True
 
 
-async def async_setup_entry(hass: HomeAssistantType, config_entry: ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Set up Exta Life component from a Config Entry"""
 
     _LOGGER.debug("Inside async_setup_entry. %s", config_entry.data)
@@ -189,7 +190,7 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: ConfigEntry):
     return await initialize(hass, config_entry)
 
 
-async def async_unload_entry(hass: HomeAssistantType, config_entry: ConfigEntry):
+async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Unload a config entry: unload platform entities, stored data, deregister signal listeners"""
     core = Core.get(config_entry.entry_id)
 
@@ -198,10 +199,10 @@ async def async_unload_entry(hass: HomeAssistantType, config_entry: ConfigEntry)
     return True
 
 
-async def initialize(hass: HomeAssistantType, config_entry: ConfigEntry):
+async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
     """Initialize Exta Life integration based on a Config Entry"""
 
-    def init_options(hass: HomeAssistantType, config_entry: ConfigEntry):
+    def init_options(hass: HomeAssistant, config_entry: ConfigEntry):
         """Populate default options for Exta Life."""
         default = get_default_options()
         options = {**config_entry.options}
@@ -312,7 +313,7 @@ async def initialize(hass: HomeAssistantType, config_entry: ConfigEntry):
 class ChannelDataManager:
     """Get the latest data from EFC-01, call device discovery, handle status notifications."""
 
-    def __init__(self, hass: HomeAssistantType, config_entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the data object."""
         self.data = None
         self._hass = hass

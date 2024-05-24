@@ -7,7 +7,7 @@ from homeassistant.helpers.dispatcher import (
     async_dispatcher_send,
     async_dispatcher_connect,
 )
-from homeassistant.helpers.typing import HomeAssistantType
+from homeassistant.core import HomeAssistant
 
 from .helpers.common import PseudoPlatform
 from .helpers.const import (DOMAIN,  DOMAIN_TRANSMITTER)
@@ -25,7 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 
 CORE_STORAGE_ID = 'transmitter_mgr'
 
-async def async_setup_entry(hass: HomeAssistantType, config_entry: ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Set up Exta Life transmitters based on existing config."""
 
     core = Core.get(config_entry.entry_id)
@@ -44,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: ConfigEntry):
 
     core.pop_channels(DOMAIN_TRANSMITTER)
 
-async def async_unload_entry(hass: HomeAssistantType, config_entry: ConfigEntry):
+async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Unload Exta Life transmitters based on existing config."""
 
     core = Core.get(config_entry.entry_id)

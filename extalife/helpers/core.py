@@ -6,7 +6,7 @@ from typing import Callable, Any
 from homeassistant.helpers.event import async_track_time_interval
 import homeassistant.helpers.entity_registry as er
 from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.typing import HomeAssistantType, ConfigType
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -47,7 +47,7 @@ class Core:
     _is_stopping = False
 
     @classmethod
-    def create(cls, hass: HomeAssistantType, config_entry: ConfigEntry):
+    def create(cls, hass: HomeAssistant, config_entry: ConfigEntry):
         """Create Core instance for a given Config Entry"""
         cls._hass = hass
         inst = Core(config_entry)
@@ -66,8 +66,8 @@ class Core:
         return cls._inst.get(entry_id)
 
     @classmethod
-    def get_hass(cls) -> HomeAssistantType:
-        """Return HomeAssistantType instance"""
+    def get_hass(cls) -> HomeAssistant:
+        """Return HomeAssistant instance"""
         return cls._hass
 
     def __init__(self, config_entry: ConfigEntry):

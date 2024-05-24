@@ -9,7 +9,7 @@ from homeassistant.components.climate.const import (
     HVACAction,
     HVACMode,
 )
-from homeassistant.helpers.typing import HomeAssistantType
+from homeassistant.core import HomeAssistant
 
 from . import ExtaLifeChannel
 from .helpers.const import DOMAIN_VIRTUAL_CLIMATE_SENSOR
@@ -62,7 +62,7 @@ HA_MODE_ACTION = {
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """setup via configuration.yaml not supported anymore"""
 
-async def async_setup_entry(hass: HomeAssistantType, config_entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
     """Set up an Exta Life heat controllers """
 
     core = Core.get(config_entry.entry_id)

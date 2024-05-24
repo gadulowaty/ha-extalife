@@ -10,7 +10,7 @@ from homeassistant.components.cover import (
     ATTR_POSITION,
     DOMAIN as DOMAIN_COVER,
 )
-from homeassistant.helpers.typing import HomeAssistantType
+from homeassistant.core import HomeAssistant
 
 from . import ExtaLifeChannel
 from .helpers.const import OPTIONS_COVER_INVERTED_CONTROL, DOMAIN_VIRTUAL_COVER_SENSOR
@@ -28,7 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """setup via configuration.yaml not supported anymore"""
 
-async def async_setup_entry(hass: HomeAssistantType, config_entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
     """Set up Exta Life covers based on existing config."""
 
     core = Core.get(config_entry.entry_id)

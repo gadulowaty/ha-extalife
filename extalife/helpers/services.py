@@ -5,7 +5,7 @@ import voluptuous as vol
 from homeassistant.const import CONF_ENTITY_ID
 import homeassistant.helpers.entity_registry as er
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.typing import HomeAssistantType
+from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from ..pyextalife import ExtaLifeAPI
 from .typing import CoreType
@@ -35,7 +35,7 @@ SCHEMA_TEST_BUTTON = vol.Schema(
 class ExtaLifeServices():
     """ handle Exta Life services """
 
-    def __init__(self, hass: HomeAssistantType):
+    def __init__(self, hass: HomeAssistant):
         self._hass = hass
         self._services = []
 
