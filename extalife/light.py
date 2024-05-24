@@ -161,7 +161,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
     def __init__(self, channel_data, config_entry):
         super().__init__(channel_data, config_entry)
 
-        self._supported_features: int = 0
+        self._supported_features: LightEntityFeature = LightEntityFeature(0)
         self._effect_list = None
         self.channel_data = channel_data.get("data")
         self._assumed_on = False
@@ -324,7 +324,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
             return scaleto255(data.get("value"))
 
     @property
-    def supported_features(self):
+    def supported_features(self) -> LightEntityFeature:
         _LOGGER.debug("Supported flags: %s", self._supported_features)
         return self._supported_features
 
