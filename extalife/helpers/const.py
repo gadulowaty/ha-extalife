@@ -60,6 +60,9 @@ VIRT_SENSOR_NAME_SUFFIX = "name_suffix"
 # virtual sensor channel data field
 VIRT_SENSOR_CHN_FIELD = "_virtual_sensor"
 
+# sensor restrictions
+VIRT_SENSOR_ALLOWED_CHANNELS = "allowed_channels"
+
 # events and devices
 CONF_EXTALIFE_EVENT_UNIQUE_ID = "unique_id"
 
