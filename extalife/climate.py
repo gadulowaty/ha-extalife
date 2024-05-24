@@ -3,7 +3,7 @@ from pprint import pformat
 
 # from homeassistant.components.extalife import ExtaLifeChannel
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, TEMP_CELSIUS
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, DOMAIN as DOMAIN_CLIMATE
 from homeassistant.components.climate.const import (
     HVACAction,
@@ -124,7 +124,7 @@ class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):
     @property
     def temperature_unit(self):
         """Return the unit of measurement."""
-        return TEMP_CELSIUS
+        return UnitOfTemperature.CELSIUS
 
     @property
     def current_temperature(self):

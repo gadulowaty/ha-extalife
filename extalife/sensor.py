@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import logging
 from pprint import pformat
 
-from homeassistant.backports.enum import StrEnum
+from enum import StrEnum
 
 from homeassistant.components.sensor import (
     DOMAIN as DOMAIN_SENSOR,
@@ -16,16 +16,16 @@ from homeassistant.config_entries import ConfigEntry
 
 from homeassistant.const import (
     PERCENTAGE,
-    TEMP_CELSIUS,
-    PRESSURE_HPA,
+    UnitOfTemperature,
+    UnitOfPressure,
     DEGREE,
-    ELECTRIC_POTENTIAL_VOLT,
-    ELECTRIC_CURRENT_AMPERE,
-    FREQUENCY_HERTZ,
-    POWER_WATT,
+    UnitOfElectricPotential,
+    UnitOfElectricCurrent,
+    UnitOfFrequency,
+    UnitOfPower,
     POWER_VOLT_AMPERE_REACTIVE,
-    POWER_VOLT_AMPERE,
-    ENERGY_KILO_WATT_HOUR,
+    UnitOfApparentPower,
+    UnitOfEnergy,
     LIGHT_LUX,
 )
 from homeassistant.core import HomeAssistant
@@ -133,14 +133,14 @@ VIRTUAL_SENSOR_RESTRICTIONS = {
 # The key is the property name
 SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
     SensorDeviceClass.ENERGY: ELSensorEntityDescription(
-        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_path='total_energy',
         factor=0.00001,
     ),
     ExtaSensorDeviceClass.MANUAL_ENERGY: ELSensorEntityDescription(
-        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_path='manual_energy',
@@ -159,7 +159,7 @@ SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
         factor=0.00001,
     ),
     SensorDeviceClass.POWER: ELSensorEntityDescription(
-        native_unit_of_measurement=POWER_WATT,
+        native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
@@ -169,12 +169,12 @@ SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorDeviceClass.APPARENT_POWER: ELSensorEntityDescription(
-        native_unit_of_measurement=POWER_VOLT_AMPERE,
+        native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         device_class=SensorDeviceClass.APPARENT_POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorDeviceClass.VOLTAGE: ELSensorEntityDescription(
-        native_unit_of_measurement=ELECTRIC_POTENTIAL_VOLT,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         factor=0.01,
@@ -185,13 +185,13 @@ SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
         factor=0.001,
     ),
     SensorDeviceClass.CURRENT: ELSensorEntityDescription(
-        native_unit_of_measurement=ELECTRIC_CURRENT_AMPERE,
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         factor=0.001,
     ),
     SensorDeviceClass.FREQUENCY: ELSensorEntityDescription(
-        native_unit_of_measurement=FREQUENCY_HERTZ,
+        native_unit_of_measurement=UnitOfFrequency.HERTZ,
         device_class=SensorDeviceClass.FREQUENCY,
         state_class=SensorStateClass.MEASUREMENT,
         factor=0.01,
@@ -203,7 +203,7 @@ SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
         factor=0.1,
     ),
     SensorDeviceClass.PRESSURE: ELSensorEntityDescription(
-        native_unit_of_measurement=PRESSURE_HPA,
+        native_unit_of_measurement=UnitOfPressure.HPA,
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
         factor=1,
@@ -227,7 +227,7 @@ SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
         factor=100,
     ),
     SensorDeviceClass.TEMPERATURE: ELSensorEntityDescription(
-        native_unit_of_measurement=TEMP_CELSIUS,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         factor=1,
