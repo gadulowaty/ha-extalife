@@ -7,6 +7,7 @@ from homeassistant.helpers.event import async_track_time_interval
 import homeassistant.helpers.entity_registry as er
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.typing import HomeAssistantType, ConfigType
+from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 
@@ -40,7 +41,7 @@ async def options_change_callback(hass, config_entry: ConfigEntry):
 class Core:
 
     _inst = dict()
-    _hass: HomeAssistantType = None
+    _hass: HomeAssistant = None
     _services: ExtaLifeServices = None
 
     _is_stopping = False
@@ -60,7 +61,7 @@ class Core:
         return inst
 
     @classmethod
-    def get(cls, entry_id: ConfigEntry.entry_id) -> "Core":  # forward
+    def get(cls, entry_id: ConfigEntry) -> "Core":  # forward
         """Get instance of the Core object based on Config Entry ID"""
         return cls._inst.get(entry_id)
 
@@ -251,7 +252,7 @@ class Core:
         return self._config_entry
 
     @property
-    def hass(self) -> HomeAssistantType():
+    def hass(self) -> HomeAssistant:
         return Core._hass
 
     @property
