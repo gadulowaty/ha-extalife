@@ -4,6 +4,7 @@
   "version": "2.2b5",
   "config_flow": true,
   "documentation": "https://www.forumextalife.pl/index.php/board,56.0.html",
+  "issue_tracker": "https://github.com/dgtal1/extalife_custom_component/issues",
   "requirements": [
     "getmac==0.8.2"
   ],
