@@ -5,9 +5,7 @@ import datetime
 from typing import Callable, Any
 from concurrent.futures import ThreadPoolExecutor
 from homeassistant.helpers.event import async_track_time_interval
-import homeassistant.helpers.entity_registry as er
 from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.typing import ConfigType
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -15,11 +13,9 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from .const import DATA_CORE, DOMAIN, CONF_EXTALIFE_EVENT_SCENE
 from ..pyextalife import ExtaLifeAPI
 from .typing import (
-    TransmitterManagerType,
-    DeviceManagerType,
-    TransmitterManagerType,
     ChannelDataManagerType,
     CoreType,
+    DeviceManagerType
 )
 from .services import ExtaLifeServices
 
@@ -32,7 +28,8 @@ MAP_NOTIF_CMD_TO_EVENT = {
 _LOGGER = logging.getLogger(__name__)
 
 
-async def options_change_callback(hass, config_entry: ConfigEntry):
+# noinspection PyUnusedLocal
+async def options_change_callback(hass: HomeAssistant, config_entry: ConfigEntry):
     """Options update listener"""
 
     core = Core.get(config_entry.entry_id)
@@ -41,7 +38,7 @@ async def options_change_callback(hass, config_entry: ConfigEntry):
 
 class Core:
 
-    _inst = dict()
+    _inst: dict[str, CoreType] = dict()
     _hass: HomeAssistant = None
     _services: ExtaLifeServices = None
 
@@ -62,7 +59,7 @@ class Core:
         return inst
 
     @classmethod
-    def get(cls, entry_id: ConfigEntry) -> "Core":  # forward
+    def get(cls, entry_id: str) -> CoreType:  # forward
         """Get instance of the Core object based on Config Entry ID"""
         return cls._inst.get(entry_id)
 
@@ -103,7 +100,7 @@ class Core:
             options_change_callback
         )
 
-        self._controller_entity: Entity = None
+        self._controller_entity: Entity | None = None
 
         self._storage = {}
 
@@ -132,6 +129,7 @@ class Core:
         # remove instance only after everything is unloaded
         self._inst.pop(self.config_entry.entry_id)
 
+    # noinspection PyUnusedLocal
     @classmethod
     async def _on_homeassistant_stop(cls, event):
         """Called when Home Assistant is shutting down"""
@@ -150,7 +148,7 @@ class Core:
         instances = (
             [cls.get(entry_id)]
             if entry_id
-            else [inst for id, inst in cls._inst.items()]
+            else [inst_obj for inst_id, inst_obj in cls._inst.items()]
         )
         for inst in instances:
             inst._queue.put_nowait(None)  # terminate callback worker
@@ -187,7 +185,7 @@ class Core:
         if self._periodic_reconnect_remove_callback is not None:
             self._periodic_reconnect_remove_callback()
 
-        # Update controller sotware info
+        # Update controller software info
         if self._controller_entity is not None:
             self._controller_entity.schedule_update_ha_state()
 
@@ -197,7 +195,7 @@ class Core:
         if self._is_unloading or self._is_stopping:
             return
 
-        # Update controller sotware info
+        # Update controller software info
         if self._controller_entity is not None:
             self._controller_entity.schedule_update_ha_state()
 
@@ -218,10 +216,10 @@ class Core:
 
         self._put_notification_on_event_bus(msg)
 
-
+    # noinspection PyUnusedLocal
     async def _periodic_reconnect_callback(self, now):
         """Reconnect with the controller after connection is lost
-        This will be executed periodically until reconnection is successfull"""
+        This will be executed periodically until reconnection is successful"""
         await self.api.async_reconnect()
 
     async def register_controller(self):
@@ -231,7 +229,7 @@ class Core:
         await ExtaLifeController.register_controller(self.config_entry.entry_id)
 
     def controller_entity_added_to_hass(self, entity):
-        """Callback called by controlelr entity when the entity is added to HA
+        """Callback called by controller entity when the entity is added to HA
 
         entity - Entity object"""
         self._controller_entity = entity
@@ -247,11 +245,8 @@ class Core:
     def api(self) -> ExtaLifeAPI:
         return self._api
 
-    def set_data_manager(self, manager: ChannelDataManagerType):
-        self._poller = manager
-
     @property
-    def data_manager(self) -> "ChannelDataManager":
+    def data_manager(self) -> ChannelDataManagerType:
         return self._data_manager
 
     @property
@@ -263,15 +258,15 @@ class Core:
         return Core._hass
 
     @property
-    def dev_manager(self) -> "DeviceManager":
+    def dev_manager(self) -> DeviceManagerType:
         return self._dev_manager
 
     @property
     def signal_remove_callbacks(self):
         return self._signal_callbacks
 
-    def add_signal_remove_cback(self, callback, type: str):
-        self._signal_callbacks[type] = callback
+    def add_signal_remove_callback(self, callback, cb_type: str):
+        self._signal_callbacks[cb_type] = callback
 
     def unregister_signal_callbacks(self):
         for callback in self.signal_remove_callbacks:
@@ -321,7 +316,8 @@ class Core:
         package = ".".join(__package__.split(".")[:-1])  # 1 level above current package
 
         with ThreadPoolExecutor(max_workers=1) as executor:
-            _LOGGER.debug("async_setup_custom_platforms(), request module: %s (package: %s) [%s]", "." + module, package, __package__)
+            _LOGGER.debug("async_setup_custom_platforms(), request module: %s (package: %s) [%s]",
+                          "." + module, package, __package__)
             try:
                 future = executor.submit(importlib.import_module, "." + module, package=package)
                 module = future.result()
@@ -330,7 +326,7 @@ class Core:
                 _LOGGER.debug("async_setup_custom_platforms(), func: %s", func)
                 await func(self.hass, self.config_entry)
             except Exception as ex:
-                _LOGGER.warning("async_setup_custom_platforms(), failed with msg '%s'", repr(ex) )
+                _LOGGER.warning("async_setup_custom_platforms(), failed with msg '%s'", repr(ex))
 
     async def async_unload_custom_platforms(self):
         """Unload other, custom (pseudo)platforms"""
@@ -343,25 +339,25 @@ class Core:
                 continue
 
             try:
-                _LOGGER.debug("async_unload_custom_platforms(), request module: %s (package: %s) [%s]", "." + platform,
-                              package, __package__)
+                _LOGGER.debug("async_unload_custom_platforms(), request module: %s (package: %s) [%s]",
+                              "." + platform, package, __package__)
                 module = importlib.import_module("." + platform, package=package)
                 _LOGGER.debug("async_unload_custom_platforms(), module: %s", module)
                 func = getattr(module, "async_unload_entry")
                 _LOGGER.debug("async_unload_custom_platforms(), func: %s", func)
                 await func(self._hass, self.config_entry)
             except ModuleNotFoundError as ex:
-                _LOGGER.debug( "async_unload_custom_platforms(), failed with msg '%s'", repr(ex) )
+                _LOGGER.debug("async_unload_custom_platforms(), failed with msg '%s'", repr(ex))
                 pass
 
-    def storage_add(self, id, inst):
-        self._storage.update({id: inst})
+    def storage_add(self, inst_id: str, inst_obj):
+        self._storage.update({inst_id: inst_obj})
 
-    def storage_get(self, id):
-        self._storage.get(id)
+    def storage_get(self, inst_id: str):
+        self._storage.get(inst_id)
 
-    def storage_remove(self, id):
-        self._storage.pop(id)
+    def storage_remove(self, inst_id: str):
+        self._storage.pop(inst_id)
 
     def async_track_time_interval(self, callback, interval: datetime.timedelta):
         """Add a listener that fires repetitively at every timedelta interval."""
@@ -444,7 +440,7 @@ class Core:
         target_list = self._signals.get(signal_int, [])
 
         for target in target_list:
-            _LOGGER.debug("queue.put")
+            _LOGGER.debug("queue.put %s", target)
             self._queue.put_nowait({"signal": signal_int, "data": args})
 
     async def _queue_worker(self):

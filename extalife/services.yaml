@@ -6,7 +6,7 @@ restart:
             example: extalife.efc_01
 
 refresh_state:
-    description: Get the newest staus for all devices / entities from controller.
+    description: Get the newest status for all devices / entities from controller.
     fields:
         entity_id:
             description: Entity ID representing controller

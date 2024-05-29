@@ -14,7 +14,7 @@ ZAMEL Exta Life integration with Home Assistant based on custom component.
 * Smart sockets: ROG-21
 * Roller blind controllers: SRP-22, SRM-22
 * Heating controller: RGT-01, GKN-01
-* Sensors: RCT-21, RCT-22, RNK-21&RNK-22 built-in temperature sensor, flood sensor RCZ-21, motion sensor RCR-21, window sensor RCK-21, multisensor RCM-21, 3-phase energy meter MEM-21
+* Sensors: RCT-21, RCT-22, RNK-21&RNK-22 built-in temperature sensor, flood sensor RCZ-21, motion sensor RCR-21, window sensor RCK-21, multi-sensor RCM-21, 3-phase energy meter MEM-21
 
 ### Exta Free supported devices (via EFC-01 controller):
 * Switches: ROP-01, ROP-02, ROP-05, ROP-06, ROP-07, ROM-01, ROM-10
@@ -22,10 +22,10 @@ ZAMEL Exta Life integration with Home Assistant based on custom component.
 * Smart sockets: RWG-01
 * Roller blind controllers: SRP-02, SRP-03, ROB-01
 
-**Note:** Certain switches are mapped into Home Asistant light entities depending on icon assigned to them. This is to support voice control by Google Assistant and others and because switches are mostly used for light control.
+**Note:** Certain switches are mapped into Home Assistant light entities depending on icon assigned to them. This is to support voice control by Google Assistant and others and because switches are mostly used for light control.
 ### Setup
 Make sure you copied the integration to `custom_components` folder in your `config` directory.
-The integration is setup from Home Assistant GUI (Integrations screen). Search for "Exta Life" on the list of possible integrations. If it's not visible - clear your browser chache and refresh page.
+The integration is set up from Home Assistant GUI (Integrations screen). Search for "Exta Life" on the list of possible integrations. If it's not visible - clear your browser cache and refresh page.
 The integration supports Integration Options - search for it on the Exta Life integration badge in Integrations GUI.
 
 Discussion, news and many more on https://www.forumextalife.pl/

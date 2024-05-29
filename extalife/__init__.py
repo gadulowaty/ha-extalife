@@ -1,19 +1,13 @@
 """Support for ExtaLife devices."""
-import asyncio
 from datetime import timedelta
-import importlib
 import logging
-from typing import Optional
+from typing import Any
 import voluptuous as vol
 
-from homeassistant.const import CONF_ACCESS_TOKEN
 import homeassistant.helpers.config_validation as cv
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.discovery import load_platform
 from homeassistant.helpers.entity import Entity
-from homeassistant.helpers import entity_component
 from homeassistant.helpers import entity_platform
-from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.core import HomeAssistant
@@ -66,10 +60,10 @@ from .helpers.const import (
     OPTIONS_GENERAL,
     OPTIONS_GENERAL_POLL_INTERVAL,
     OPTIONS_GENERAL_DISABLE_NOT_RESPONDING,
-    VIRT_SENSOR_CHN_FIELD,
-    VIRT_SENSOR_DEV_CLS,
-    VIRT_SENSOR_PATH,
-    VIRT_SENSOR_ALLOWED_CHANNELS
+    VIRTUAL_SENSOR_CHN_FIELD,
+    VIRTUAL_SENSOR_DEV_CLS,
+    VIRTUAL_SENSOR_PATH,
+    VIRTUAL_SENSOR_ALLOWED_CHANNELS
 )
 
 from .helpers.services import ExtaLifeServices
@@ -123,6 +117,7 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
+# noinspection PyUnusedLocal
 async def async_migrate_entry(hass, config_entry: ConfigEntry):
     """Migrate old entry."""
     _LOGGER.debug("Migrating from version %s", config_entry.version)
@@ -144,10 +139,9 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
         new = {**config_entry.data}
         try:
             new.pop(CONF_POLL_INTERVAL)
-            new.pop(
-                CONF_OPTIONS
-            )  # get rid of errorneously migrated options from integration 1.0
-        except:     # pylint: disable=bare-except
+            # get rid of erroneously migrated options from integration 1.0
+            new.pop(CONF_OPTIONS)
+        except KeyError:     # pylint: disable=bare-except
             pass
         config_entry.data = {**new}
 
@@ -158,6 +152,7 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
     return True
 
 
+# noinspection PyUnusedLocal
 async def async_setup(hass: HomeAssistant, hass_config: ConfigType):
     """Set up Exta Life component from configuration.yaml. This will basically
     forward the config to a Config Flow and will migrate to Config Entry"""
@@ -190,10 +185,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     return await initialize(hass, config_entry)
 
 
+# noinspection PyUnusedLocal
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Unload a config entry: unload platform entities, stored data, deregister signal listeners"""
-    core = Core.get(config_entry.entry_id)
 
+    core = Core.get(config_entry.entry_id)
     await core.unload_entry_from_hass()
 
     return True
@@ -202,8 +198,9 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
     """Initialize Exta Life integration based on a Config Entry"""
 
-    def init_options(hass: HomeAssistant, config_entry: ConfigEntry):
+    def init_options():
         """Populate default options for Exta Life."""
+
         default = get_default_options()
         options = {**config_entry.options}
         # migrate options after creation of ConfigEntry
@@ -222,16 +219,16 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
         for k, v in default.items():
             options_def.setdefault(k, v)
 
-        # check for changes and if options should be peristed
+        # check for changes and if options should be persisted
         if options_def != options or not config_entry.options:
             hass.config_entries.async_update_entry(config_entry, options=options_def)
 
-    async def api_connect(user, password, host):
-        controller = Core.get(config_entry.entry_id).api
-        await controller.async_connect(user, password, host=host)
-        return controller
+    async def api_connect(conn_user, conn_password, conn_host):
+        result = Core.get(config_entry.entry_id).api
+        await result.async_connect(conn_user, conn_password, host=conn_host)
+        return result
 
-    init_options(hass, config_entry)
+    init_options()
 
     controller = None
 
@@ -258,13 +255,15 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
             _LOGGER.debug(
                 "Connection exception: %s, class: %s", e.previous, e.previous.__class__
             )
-            # invalid IP / IP changed? - try autodetection
+            # invalid IP / IP changed? - try auto-detection
             if isinstance(e.previous, OSError) and e.previous.errno == 113:
                 _LOGGER.warning(
-                    "Could not connect to EFC-01 on IP stored in configuration: %s. Trying to discover controller IP in the network",
+                    "Could not connect to EFC-01 on IP stored in configuration: %s. "
+                    "Trying to discover controller IP in the network",
                     controller_ip,
                 )
-                # controller = await hass.async_add_executor_job(api_connect, el_conf[CONF_USER], el_conf[CONF_PASSWORD], None)
+                # controller = await hass.async_add_executor_job(api_connect, el_conf[CONF_USER],
+                # el_conf[CONF_PASSWORD], None)
                 controller = await api_connect(
                     el_conf[CONF_USER], el_conf[CONF_PASSWORD], None
                 )
@@ -276,7 +275,7 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
                 _LOGGER.info("Controller IP updated to: %s", controller.host)
             else:
                 raise e
-        _LOGGER.debug("Connected to controller on IP: %s", controller.host)
+        _LOGGER.info("Connected to controller on IP: %s", controller.host)
 
         sw_version = controller.sw_version
 
@@ -290,12 +289,12 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
 
             return False
 
-    except TCPConnError as e:                                                               # pylint: disable=invalid-name, unused-variable
+    except TCPConnError:
         host = controller.host if (controller and controller.host) else "unknown"
         _LOGGER.error("Could not connect to EFC-01 on IP: %s", host)
 
         await core.unload_entry_from_hass()
-        raise ConfigEntryNotReady                                                           # pylint: disable=raise-missing-from
+        raise ConfigEntryNotReady from None
 
     await core.register_controller()
 
@@ -328,8 +327,6 @@ class ChannelDataManager:
         self._poller_callback_remove = None
         self._ping_callback_remove = None
 
-        return None
-
     @property
     def core(self):
         return Core.get(self._config_entry.entry_id)
@@ -343,19 +340,19 @@ class ChannelDataManager:
         _LOGGER.debug("Received status change notification from controller: %s", msg)
         data = msg.get("data")
         channel = data.get("channel", "#")
-        chan_id = str(data.get("id")) + "-" + str(channel)
+        channel_id = str(data.get("id")) + "-" + str(channel)
 
         # inform HA entity of state change via notification
-        signal = ExtaLifeChannel.get_notif_upd_signal(chan_id)
+        signal = ExtaLifeChannel.get_notif_upd_signal(channel_id)
         if channel != "#":
             self.core.async_signal_send(signal, data)
         else:
             self.core.async_signal_send_sync(signal, data)
 
-    def update_channel(self, id: str, data: dict):      # pylint: disable=redefined-builtin
+    def update_channel(self, channel_id: str, channel_data: dict):
         """Update data of a channel e.g. after notification data received and processed
         by an entity"""
-        self.channels_indx.update({id: data})
+        self.channels_indx.update({channel_id: channel_data})
 
     async def async_start_polling(self, poll_now: bool):
         """Start cyclic status polling
@@ -434,7 +431,7 @@ class ChannelDataManager:
         Fetch / refresh device data & discover devices and register them in Home Assistant.
         """
 
-        component_configs = {}
+        component_configs: dict = {}
         other_configs = {}
 
         # get data from the ChannelDataManager object stored in HA object data
@@ -503,8 +500,8 @@ class ChannelDataManager:
         # Load discovered devices
 
         if component_configs:
-            # can happen we don't have any sensors, so we need to put an empty list to trigger creation of virtual sensors (if any)
-            # for
+            # can happen we don't have any sensors, so we need to put an empty list to trigger
+            # creation of virtual sensors (if any) for
             component_configs.setdefault(DOMAIN_SENSOR, [])
 
             # sensors must be last as platforms will delegate their attributes to virtual sensors
@@ -572,7 +569,7 @@ class ExtaLifeChannel(Entity):
 
     async def async_update_callback(self):
         """Inform HA of state update from status poller"""
-        _LOGGER.debug("Update callback for entty id: %s", self.entity_id)
+        _LOGGER.debug("Update callback for entity id: %s", self.entity_id)
         self.async_schedule_update_ha_state(True)
 
     async def async_state_notif_update_callback(self, *args):
@@ -587,7 +584,7 @@ class ExtaLifeChannel(Entity):
         self.on_state_notification(data)
 
     def on_state_notification(self, data):
-        """must be overriden in entity subclasses"""
+        """must be overridden in entity subclasses"""
 
     def get_unique_id(self):
         """Provide unique id for HA entity registry"""
@@ -651,7 +648,7 @@ class ExtaLifeChannel(Entity):
         }
 
     @property
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         """Return name of the entity"""
         return self.channel_data["alias"]
 
@@ -670,11 +667,10 @@ class ExtaLifeChannel(Entity):
         )
 
         try:
-            resp = await self.controller.async_execute_action(
-                action, self.channel_id, **add_pars
-            )
+            resp = await self.controller.async_execute_action(action, self.channel_id, **add_pars)
         except TCPConnError as err:
             _LOGGER.error(err.data)
+            return None
 
         return resp
 
@@ -692,7 +688,7 @@ class ExtaLifeChannel(Entity):
             is_timeout,
         )
 
-        return self.data_available == True and is_timeout == False
+        return self.data_available is True and is_timeout is False
 
     async def async_update(self):
         """Call to update state."""
@@ -725,8 +721,8 @@ class ExtaLifeChannel(Entity):
         self.async_schedule_update_ha_state(True)
 
     @property
-    def extra_state_attributes(self):
-        """ " Return state atributes"""
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """ " Return state attributes"""
         return {
             "channel_id": self.channel_id,
             "not_responding": self.channel_data.get("is_timeout"),
@@ -739,7 +735,7 @@ class ExtaLifeChannel(Entity):
         return []
 
     def _get_virtual_sensors(self) -> list:
-        """By default check all entity attributes and return virtual sensor config"""
+        """By default, check all entity attributes and return virtual sensor config"""
         from .sensor import MAP_EXTA_ATTRIBUTE_TO_DEV_CLASS
 
         attr = []
@@ -747,13 +743,13 @@ class ExtaLifeChannel(Entity):
             dev_class = MAP_EXTA_ATTRIBUTE_TO_DEV_CLASS.get(k)
             if dev_class:
 
-                if not self.is_virt_sensor_allowed(k):
+                if not self.is_virtual_sensor_allowed(k):
                     continue
 
                 attr.append(
                     {
-                        VIRT_SENSOR_DEV_CLS: dev_class,
-                        VIRT_SENSOR_PATH: k
+                        VIRTUAL_SENSOR_DEV_CLS: dev_class,
+                        VIRTUAL_SENSOR_PATH: k
                     }
                 )
 
@@ -764,7 +760,7 @@ class ExtaLifeChannel(Entity):
 
         return attr
 
-    def is_virt_sensor_allowed(self, attr_name: str):
+    def is_virtual_sensor_allowed(self, attr_name: str):
         """Check if virtual sensor should be created for an attribute based on settings"""
         from .sensor import VIRTUAL_SENSOR_RESTRICTIONS
 
@@ -772,7 +768,7 @@ class ExtaLifeChannel(Entity):
         restr = VIRTUAL_SENSOR_RESTRICTIONS.get(attr_name)
 
         if restr:
-            if not (channel in restr.get(VIRT_SENSOR_ALLOWED_CHANNELS)):
+            if not (channel in restr.get(VIRTUAL_SENSOR_ALLOWED_CHANNELS)):
                 return False
 
         return True
@@ -786,14 +782,15 @@ class ExtaLifeChannel(Entity):
         _LOGGER.debug("Virtual sensors: %s", virtual_sensors)
         for virtual in virtual_sensors:
             v_channel_data = channel_data.copy()
-            v_channel_data.update({VIRT_SENSOR_CHN_FIELD: virtual})
+            v_channel_data.update({VIRTUAL_SENSOR_CHN_FIELD: virtual})
             self.core.push_channels(
                 virtual_sensor_domain, v_channel_data, append=True, custom=True
             )
 
-    def format_state_attr(self, attr: dict):
-        """Format state atteibutes based on name and other criteria.
-        Can be overriden in dedicated subclasses to refine formatiing"""
+    @staticmethod
+    def format_state_attr(attr: dict):
+        """Format state attributes based on name and other criteria.
+        Can be overridden in dedicated subclasses to refine formatting"""
         from re import search
 
         for k, v in attr.items():
@@ -889,7 +886,7 @@ class ExtaLifeController(Entity):
         }
 
     @property
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         """Return name of the entity"""
         return self.api.name
 
@@ -918,7 +915,7 @@ class ExtaLifeController(Entity):
                 {
                      "type": "gateway",
                      "mac_address": self.mac,
-                     "ipv4_addres:": self.api.host,
+                     "ipv4_address:": self.api.host,
                      "software_version": self.api.sw_version,
                      "name": self.api.name,
                 }

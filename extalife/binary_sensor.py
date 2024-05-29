@@ -11,15 +11,18 @@ from .helpers.core import Core
 from .pyextalife import (       # pylint: disable=syntax-error
     DEVICE_ARR_SENS_WATER,
     DEVICE_ARR_SENS_MOTION,
-    DEVICE_ARR_SENS_OPENCLOSE,
+    DEVICE_ARR_SENS_OPEN_CLOSE,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
+# noinspection PyUnusedLocal
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """"setup via configuration.yaml not supported anymore"""
 
+
+# noinspection PyUnusedLocal
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
     """Set up Exta Life binary sensors based on existing config."""
 
@@ -30,6 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     async_add_entities([ExtaLifeBinarySensor(device, config_entry) for device in channels])
 
     core.pop_channels(DOMAIN_BINARY_SENSOR)
+
 
 class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
     """Representation of an ExtaLife binary sensors"""
@@ -46,7 +50,7 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
         if dev_type in DEVICE_ARR_SENS_MOTION:
             self._dev_class = "motion"
 
-        if dev_type in DEVICE_ARR_SENS_OPENCLOSE:
+        if dev_type in DEVICE_ARR_SENS_OPEN_CLOSE:
             self._dev_class = "opening"
 
         self._dev_type = dev_type
@@ -56,7 +60,7 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
     @property
     def is_on(self):
         """Return state of the sensor"""
-        # Exta Life detection sensors keep their bollean status in field value_3
+        # Exta Life detection sensors keep their boolean status in field value_3
         state = self.channel_data.get("value_3")
 
         if self._dev_type in DEVICE_ARR_SENS_WATER:
@@ -65,7 +69,7 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
         elif self._dev_type in DEVICE_ARR_SENS_MOTION:
             value = state
 
-        elif self._dev_type in DEVICE_ARR_SENS_OPENCLOSE:
+        elif self._dev_type in DEVICE_ARR_SENS_OPEN_CLOSE:
             value = not state
         else:
             value = state
@@ -77,7 +81,6 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
             value,
         )
         return value
-
 
     @property
     def device_class(self):

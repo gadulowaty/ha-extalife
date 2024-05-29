@@ -1,18 +1,11 @@
 import logging
-from pprint import pformat
+from typing import Any
 
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.dispatcher import (
-    async_dispatcher_send,
-    async_dispatcher_connect,
-)
 
 from ..pyextalife import (
     ExtaLifeAPI,
     DEVICE_MAP_TYPE_TO_MODEL,
-    DEVICE_ARR_ALL_TRANSMITTER,
     PRODUCT_MANUFACTURER,
     PRODUCT_SERIES,
 )
@@ -23,19 +16,19 @@ from .device import Device
 _LOGGER = logging.getLogger(__name__)
 
 
-class PseudoPlatform():
+class PseudoPlatform:
     def __init__(self, config_entry: ConfigEntry, channel_data: dict):
         from .core import Core
         self._core = Core.get(config_entry.entry_id)
         self._hass = self._core.get_hass()
         self._config_entry = config_entry
         self._channel_data = channel_data.get("data")
-        self._id = channel_data.get("id")
+        self._id: str = channel_data.get("id")
 
         self._signal_data_notif_remove_callback = None
 
         # HA device id
-        self._device : Device = None
+        self._device: Device | None = None
 
     @property
     def controller(self) -> ExtaLifeAPI:
@@ -43,7 +36,7 @@ class PseudoPlatform():
         return self._core.api
 
     @property
-    def id(self):
+    def id(self) -> str:
         return self._id
 
     @property
@@ -52,7 +45,7 @@ class PseudoPlatform():
         return self._channel_data.get("type")
 
     @property
-    def device_info(self) -> dict:
+    def device_info(self) -> dict[str, Any]:
         model = DEVICE_MAP_TYPE_TO_MODEL.get(self._channel_data.get("type"))
         return {
             "identifiers": {(DOMAIN, self._channel_data.get('serial'))},
@@ -70,11 +63,6 @@ class PseudoPlatform():
     def device(self) -> Device:
         return self._device
 
-    @property
-    def device_id(self):
-        """ HA device id if registered """
-        return self._device_id
-
     @staticmethod
     def get_notif_upd_signal(ch_id):
         return f"{SIGNAL_NOTIF_STATE_UPDATED}_{ch_id}"
@@ -87,4 +75,3 @@ class PseudoPlatform():
 
     def _async_state_notif_update_callback(self, data):
         pass
-
