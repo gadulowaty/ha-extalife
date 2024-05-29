@@ -1,17 +1,33 @@
 """Config flow to configure Exta Life component."""
 
 import voluptuous as vol
+import logging
 
 from homeassistant import config_entries
 from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
-import logging
 
-from .helpers.const import (DOMAIN, CONF_CONTROLLER_IP, CONF_USER, CONF_PASSWORD, DEFAULT_POLL_INTERVAL, OPTIONS_LIGHT_ICONS_LIST,
-     OPTIONS_COVER_INVERTED_CONTROL, OPTIONS_GENERAL_POLL_INTERVAL, OPTIONS_GENERAL_DISABLE_NOT_RESPONDING)
+from .helpers.const import (
+    DOMAIN,
+    CONF_CONTROLLER_IP,
+    CONF_USER,
+    CONF_PASSWORD,
+    DEFAULT_POLL_INTERVAL,
+    OPTIONS_LIGHT,
+    OPTIONS_GENERAL,
+    OPTIONS_COVER,
+    OPTIONS_LIGHT_ICONS_LIST,
+    OPTIONS_COVER_INVERTED_CONTROL,
+    OPTIONS_GENERAL_POLL_INTERVAL,
+    OPTIONS_GENERAL_DISABLE_NOT_RESPONDING
+)
+from .pyextalife import (
+    ExtaLifeAPI,
+    TCPConnError,
+    DEVICE_ICON_ARR_LIGHT
+)
+
 _LOGGER = logging.getLogger(__name__)
-from .pyextalife import ExtaLifeAPI, TCPConnError, DEVICE_ICON_ARR_LIGHT
-
 
 
 @config_entries.HANDLERS.register(DOMAIN)
@@ -50,17 +66,14 @@ class ExtaLifeFlowHandler(config_entries.ConfigFlow):
         """Handle flow start.
         This step can be called either from GUI from step confirm or by step_import
         during entry migration"""
-        async def api_connect(user, password, host):
-            controller = ExtaLifeAPI(self.hass.loop)
-            await controller.async_connect(user, password, host=host)
-            self._controller_name = await controller.async_get_name()
-            return controller
 
         errors = {}
+
         controller_ip = self._import_data.get(CONF_CONTROLLER_IP) if self._import_data else None
         description_placeholders = {"error_info": ""}
         if user_input is None or (self._import_data is not None and self._import_data.get(CONF_CONTROLLER_IP) is None):
             controller_ip = await self.hass.async_add_executor_job(ExtaLifeAPI.discover_controller)
+
         if user_input is not None or self._import_data is not None:
             try:
                 if controller_ip is None:
@@ -69,11 +82,13 @@ class ExtaLifeFlowHandler(config_entries.ConfigFlow):
                 password = user_input[CONF_PASSWORD] if user_input else self._import_data[CONF_PASSWORD]
 
                 # Test connection on this IP - get instance: this will already try to connect and logon
-                controller = await api_connect(user, password, controller_ip)
+                controller = ExtaLifeAPI(self.hass.loop)
+                await controller.async_connect(user, password, host=controller_ip)
+                self._controller_name = await controller.async_get_name()
 
                 self._user_input = user_input
 
-                # popualate optional IP address if not provided in config already
+                # populate optional IP address if not provided in config already
                 if self._import_data:
                     self._import_data[CONF_CONTROLLER_IP] = controller_ip
 
@@ -82,7 +97,7 @@ class ExtaLifeFlowHandler(config_entries.ConfigFlow):
                 # being MAC of a router, not a real EFC-01 MAC. For connections through VPN this should be ok
                 await self.async_set_unique_id(controller.mac)
 
-                await controller.disconnect() # if we won't do this - it will run forever and ping
+                await controller.disconnect()  # if we won't do this - it will run forever and ping
 
                 self._abort_if_unique_id_configured()
 
@@ -94,7 +109,8 @@ class ExtaLifeFlowHandler(config_entries.ConfigFlow):
                     errors = {"base": "extalife_invalid_cred"}
                 else:
                     _LOGGER.error(
-                        "Cannot connect to your EFC-01 controller on IP %s with these credentials. Check your user and password and try again. Error code: %s",
+                        "Cannot connect to your EFC-01 controller on IP %s with these credentials. "
+                        "Check your user and password and try again. Error code: %s",
                         user_input[CONF_CONTROLLER_IP], conn_error.error_code
                     )
                     errors = {"base": "extalife_no_connection"}
@@ -102,8 +118,10 @@ class ExtaLifeFlowHandler(config_entries.ConfigFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
-                {vol.Required(CONF_USER): str, vol.Required(CONF_PASSWORD): str, vol.Required(CONF_CONTROLLER_IP, default=controller_ip): str,
-                    # vol.Optional(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL): cv.positive_int,
+                {
+                    vol.Required(CONF_USER): str,
+                    vol.Required(CONF_PASSWORD): str,
+                    vol.Required(CONF_CONTROLLER_IP, default=controller_ip): str
                 }
             ),
             errors=errors,
@@ -138,11 +156,20 @@ class ExtaLifeFlowHandler(config_entries.ConfigFlow):
         # initiate the flow as from GUI, call step `init`
         return await self.async_step_init()
 
+
 def get_default_options():
+
     options = {}
-    options.setdefault("general", {OPTIONS_GENERAL_POLL_INTERVAL: DEFAULT_POLL_INTERVAL, OPTIONS_GENERAL_DISABLE_NOT_RESPONDING: True})
-    options.setdefault("light", {OPTIONS_LIGHT_ICONS_LIST: DEVICE_ICON_ARR_LIGHT})
-    options.setdefault("cover", {OPTIONS_COVER_INVERTED_CONTROL: False})
+    options.setdefault(OPTIONS_GENERAL, {
+        OPTIONS_GENERAL_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
+        OPTIONS_GENERAL_DISABLE_NOT_RESPONDING: True
+    })
+    options.setdefault(OPTIONS_LIGHT, {
+        OPTIONS_LIGHT_ICONS_LIST: DEVICE_ICON_ARR_LIGHT
+    })
+    options.setdefault(OPTIONS_COVER, {
+        OPTIONS_COVER_INVERTED_CONTROL: False
+    })
     return options.copy()
 
 
@@ -156,17 +183,18 @@ class ExtaLifeOptionsFlowHandler(config_entries.OptionsFlow):
         if self.options == {}:
             self.options = get_default_options()
 
+    # noinspection PyUnusedLocal
     async def async_step_init(self, user_input=None):
         """Manage the Exta Life options."""
         return await self.async_step_general()
 
     async def async_step_general(self, user_input=None):
         if user_input is not None:
-            self.options["general"] = user_input
+            self.options[OPTIONS_GENERAL] = user_input
             return await self.async_step_light()
 
         return self.async_show_form(
-            step_id="general",
+            step_id=OPTIONS_GENERAL,
             data_schema=vol.Schema(
                 {
                     vol.Required(OPTIONS_GENERAL_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL): cv.positive_int,
@@ -177,28 +205,30 @@ class ExtaLifeOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_light(self, user_input=None):
         if user_input is not None:
-            self.options["light"] = user_input
+            self.options[OPTIONS_LIGHT] = user_input
             return await self.async_step_cover()
 
         return self.async_show_form(
-            step_id="light",
+            step_id=OPTIONS_LIGHT,
             data_schema=vol.Schema(
                 {
-                    vol.Required("icons_list", default=self.options["light"].get("icons_list")): cv.multi_select(DEVICE_ICON_ARR_LIGHT)
+                    vol.Required(OPTIONS_LIGHT_ICONS_LIST,
+                                 default=self.options[OPTIONS_LIGHT]
+                                 .get(OPTIONS_LIGHT_ICONS_LIST)): cv.multi_select(DEVICE_ICON_ARR_LIGHT)
                 }
             ),
         )
 
     async def async_step_cover(self, user_input=None):
         if user_input is not None:
-            self.options["cover"] = user_input
+            self.options[OPTIONS_COVER] = user_input
             return self.async_create_entry(title="Exta Life Options", data=self.options)
 
         return self.async_show_form(
-            step_id="cover",
+            step_id=OPTIONS_COVER,
             data_schema=vol.Schema(
                 {
-                    vol.Required("inverted_control", default=self.options["cover"].get("inverted_control")): bool
+                    vol.Required("inverted_control", default=self.options[OPTIONS_COVER].get("inverted_control")): bool
                 }
             ),
         )

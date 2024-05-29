@@ -13,16 +13,13 @@ DEFAULT_POLL_INTERVAL = 5
 
 OPTIONS_GENERAL_POLL_INTERVAL = "poll_interval"
 OPTIONS_GENERAL_DISABLE_NOT_RESPONDING = "disable_not_responding"
-OPTIONS_LIGHT_ICONS_LIST = "icons_list"
 OPTIONS_COVER_INVERTED_CONTROL = "inverted_control"
 
 CONF_OPTIONS = "options"  # additional per-platform configuration
 OPTIONS_GENERAL = "general"  # general settings
 OPTIONS_SWITCH = "switch"  # additional switch configuration
 OPTIONS_LIGHT = "light"  # additional light configuration
-OPTIONS_LIGHT_ICONS_LIST = (
-    "icons_list"  # map switches as lights for these Exta Life icons
-)
+OPTIONS_LIGHT_ICONS_LIST = "icons_list"  # map switches as lights for these Exta Life icons
 OPTIONS_COVER = "cover"  # additional cover configuration
 OPTIONS_COVER_INV_CONTROL = "inverted_control"
 
@@ -51,17 +48,17 @@ DOMAIN_VIRTUAL_SENSORS = (
 )
 
 # virtual sensor config dict attributes
-VIRT_SENSOR_PATH = "value_path"
-VIRT_SENSOR_DEV_CLS = "device_class"
-VIRT_SENSOR_UNIT = "unit"
-VIRT_SENSOR_FACTOR = "factor"
-VIRT_SENSOR_NAME_SUFFIX = "name_suffix"
+VIRTUAL_SENSOR_PATH = "value_path"
+VIRTUAL_SENSOR_DEV_CLS = "device_class"
+VIRTUAL_SENSOR_UNIT = "unit"
+VIRTUAL_SENSOR_FACTOR = "factor"
+VIRTUAL_SENSOR_NAME_SUFFIX = "name_suffix"
 
 # virtual sensor channel data field
-VIRT_SENSOR_CHN_FIELD = "_virtual_sensor"
+VIRTUAL_SENSOR_CHN_FIELD = "_virtual_sensor"
 
 # sensor restrictions
-VIRT_SENSOR_ALLOWED_CHANNELS = "allowed_channels"
+VIRTUAL_SENSOR_ALLOWED_CHANNELS = "allowed_channels"
 
 # events and devices
 CONF_EXTALIFE_EVENT_UNIQUE_ID = "unique_id"

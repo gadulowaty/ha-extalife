@@ -55,13 +55,17 @@ HVAC_ACTION_EXTA = {
 
 # map HA HVAC mode to Exta Life action
 HA_MODE_ACTION = {
-    HVACMode.AUTO: ExtaLifeAPI.ACTN_SET_RGT_MODE_AUTO,
-    HVACMode.HEAT: ExtaLifeAPI.ACTN_SET_RGT_MODE_MANUAL
+    HVACMode.AUTO: ExtaLifeAPI.ACTION_SET_RGT_MODE_AUTO,
+    HVACMode.HEAT: ExtaLifeAPI.ACTION_SET_RGT_MODE_MANUAL
 }
 
+
+# noinspection PyUnusedLocal
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """setup via configuration.yaml not supported anymore"""
 
+
+# noinspection PyUnusedLocal
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
     """Set up an Exta Life heat controllers """
 
@@ -72,6 +76,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     async_add_entities([ExtaLifeClimate(device, config_entry) for device in channels])
 
     core.pop_channels(DOMAIN_CLIMATE)
+
 
 class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):
     """Representation of Exta Life Thermostat."""
@@ -144,7 +149,7 @@ class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):
             return
         temp_el = temperature * 10.0
 
-        if await self.async_action(ExtaLifeAPI.ACTN_SET_TMP, value=temp_el):
+        if await self.async_action(ExtaLifeAPI.ACTION_SET_TMP, value=temp_el):
             self.channel_data["value"] = temp_el
             self.channel_data["work_mode"] = HVAC_MODE_EXTA[HVACMode.HEAT]
             self.async_schedule_update_ha_state()

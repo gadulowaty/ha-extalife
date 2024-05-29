@@ -8,7 +8,7 @@
       },
       "init": {
         "title": "Enter the connection parameters to EFC-01 controller",
-        "description": "Your Exta Life devices will be autodetected after we connect to EFC-01\n\n {error_info} ",
+        "description": "Your Exta Life devices will be auto-detected after we connect to EFC-01\n\n {error_info} ",
         "data": {
           "user": "User",
           "password": "Password",
@@ -58,7 +58,7 @@
       "button_down": "\"{subtype}\" button released",
       "button_single_click": "\"{subtype}\" button single clicked (pushed and released)",
       "button_double_click": "\"{subtype}\" button double clicked",
-      "button_triple_click": "\"{subtype}\" button doubltriple clicked",
+      "button_triple_click": "\"{subtype}\" button triple clicked",
       "button_long_press": "\"{subtype}\" button released after long press"
     },
     "trigger_subtype": {

@@ -5,31 +5,27 @@ import voluptuous as vol
 import logging
 
 from homeassistant.components.automation import AutomationActionType
-import homeassistant.components.automation.event as event
-from homeassistant.components.device_automation import TRIGGER_BASE_SCHEMA
+import homeassistant.components.homeassistant.triggers.event as event
+from homeassistant.components.device_automation import DEVICE_TRIGGER_BASE_SCHEMA
 from homeassistant.const import (
     CONF_DEVICE_ID,
     CONF_DOMAIN,
-    CONF_ENTITY_ID,
     CONF_PLATFORM,
 )
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
-from homeassistant.helpers import config_validation as cv, entity_registry
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.config_entries import ConfigEntry
 
 from .helpers.const import DOMAIN, CONF_EXTALIFE_EVENT_UNIQUE_ID, TRIGGER_TYPE, TRIGGER_SUBTYPE
-from .helpers.typing import CoreType
-from .pyextalife import (MODEL_MAP_MODEL_TO_TYPE, DEVICE_ARR_ALL_TRANSMITTER)
 
 _LOGGER = logging.getLogger(__name__)
 
 
-TRIGGER_SCHEMA = TRIGGER_BASE_SCHEMA.extend(
+TRIGGER_SCHEMA = DEVICE_TRIGGER_BASE_SCHEMA.extend(
     {vol.Required(TRIGGER_TYPE): str, vol.Required(TRIGGER_SUBTYPE): str}
 )
 
-async def async_get_triggers(hass: HomeAssistant, device_id: str) -> List[dict]:
+
+async def async_get_triggers(hass: HomeAssistant, device_id: str) -> List[dict] | None:
     """List device triggers for Exta Life devices."""
     from .helpers.core import Core
     triggers = []
@@ -69,16 +65,17 @@ async def async_attach_trigger(
     config: ConfigType,
     action: AutomationActionType,
     automation_info: dict,
-) -> CALLBACK_TYPE:
+) -> CALLBACK_TYPE | None:
     """Attach a trigger to an automation"""
     from .helpers.core import Core
 
-    _LOGGER.debug("async_attach_trigger() config: %s, action: %s, automation_info: %s", config, action,automation_info )
+    _LOGGER.debug("async_attach_trigger() config: %s, action: %s, automation_info: %s", config, action, automation_info)
 
     device_registry = hass.helpers.device_registry.async_get()
     device = device_registry.async_get(config[CONF_DEVICE_ID])
     if device is None:
-        _LOGGER.warning("async_attach_trigger() device_id: %s doesn't exist in Device Registry anymore", config[CONF_DEVICE_ID] )
+        _LOGGER.warning("async_attach_trigger() device_id: %s doesn't exist in Device Registry anymore",
+                        config[CONF_DEVICE_ID])
         return
 
     core = None
@@ -92,8 +89,10 @@ async def async_attach_trigger(
     if int_device is None:
         return
 
+    dev_trigger = None
     for trigger in int_device.triggers:
-        if trigger.get(TRIGGER_TYPE) == config.get(TRIGGER_TYPE) and config.get(TRIGGER_SUBTYPE) == trigger.get(TRIGGER_SUBTYPE):
+        if (trigger.get(TRIGGER_TYPE) == config.get(TRIGGER_TYPE) and
+                config.get(TRIGGER_SUBTYPE) == trigger.get(TRIGGER_SUBTYPE)):
             dev_trigger = trigger
             break
 
