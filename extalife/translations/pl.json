@@ -17,7 +17,7 @@
       },
       "title": {
         "title": "Nazwij tą konfiguracje (opcjonalne)",
-        "description": "Opcjonalnie nadaj nazwę tej konfiguracji e.g. Dom, Mieszkanie, Domek letniskowy lub pozostaw nazwę pustą. Dymyślnie zostanie użyta nazwa odczytana z kontrolera. Nazwa pomoże rozróżnic konfiguracje zdefiniowane dla wielu kontrolerów.",
+        "description": "Opcjonalnie nadaj nazwę tej konfiguracji e.g. Dom, Mieszkanie, Domek letniskowy lub pozostaw nazwę pustą. Domyślnie zostanie użyta nazwa odczytana z kontrolera. Nazwa pomoże rozróżnić konfiguracje zdefiniowane dla wielu kontrolerów.",
         "data": {
           "title": "Nazwa"
         }
@@ -34,7 +34,7 @@
         "description": "Ustawienia ogólne",
         "data": {
           "poll_interval": "Interwał czasowy do odpytywania o aktualny stan urządzeń (minuty)",
-          "disable_not_responding": "Wyszarzaj encję gdy urządzenie nie odpowiada (tak jak w aplikacji Exta Life)"
+          "disable_not_responding": "Zmień kolor encji na szary, gdy urządzenie nie odpowiada (tak jak w aplikacji Exta Life)"
         }
       },
       "light": {
@@ -56,8 +56,8 @@
       "button_up": "{subtype} zwolniony",
       "button_down": "{subtype} wciśnięty",
       "button_single_click": "{subtype} kliknięty (wciśnięty i zwolniony)",
-      "button_double_click": "{subtype} podwójnie wciśnięty ('dwuklik')",
-      "button_triple_click": "{subtype} potrójnie wciśnięty ('trójklik')",
+      "button_double_click": "{subtype} podwójnie wciśnięty ('dwu-klik')",
+      "button_triple_click": "{subtype} potrójnie wciśnięty ('trój-klik')",
       "button_long_press": "{subtype} długo przytrzymany"
     },
     "trigger_subtype": {

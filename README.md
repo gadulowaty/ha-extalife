@@ -1,5 +1,5 @@
 <div style="display: flex; align-items: center;">
-  <img width="150" alt="home-assistant-wordmark-vertical-color-on-light" src="https://github.com/dgtal1/extalife_custom_component/assets/27864579/491d9e84-822f-4947-bf9e-805f16900401">
+  <img width="150" alt="home-assistant-word-mark-vertical-color-on-light" src="https://github.com/dgtal1/extalife_custom_component/assets/27864579/491d9e84-822f-4947-bf9e-805f16900401">
   <a href="https://www.forumextalife.pl/" style="margin-left: 10px;">
     <img src="https://yt3.ggpht.com/ytc/AKedOLRdji2oMcII8lorhHubp4V0mptIxdYMYJf25crN=s176-c-k-c0x00ffffff-no-rj" alt="ExtaLife Logo" width="200"/>
   </a>

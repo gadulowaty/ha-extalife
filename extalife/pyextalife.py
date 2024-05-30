@@ -1,6 +1,7 @@
 """ ExtaLife JSON API wrapper library. Enables device control, discovery and status fetching from EFC-01 controller """
 from __future__ import print_function
-
+import sys
+import re
 import logging
 import socket
 import json
@@ -458,6 +459,20 @@ class ExtaLifeAPI:
     CHN_TYP_SENSORS = "sensors"
     CHN_TYP_TRANSMITTERS = "transmitters"
     CHN_TYP_EXTA_FREE_RECEIVERS = "exta_free_receivers"
+
+    _debugger: bool | None = None
+
+    @classmethod
+    def is_debugger_active(cls) -> bool:
+        """Return if the debugger is currently active"""
+
+        if cls._debugger is None:
+            cls._debugger = hasattr(sys, "gettrace") and sys.gettrace() is not None
+            if not cls._debugger:
+                debugger_tool = sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID)
+                cls._debugger = debugger_tool is not None and debugger_tool != ""
+
+        return cls._debugger
 
     def __init__(self, loop: AbstractEventLoop, on_notification_callback=None, on_connect_callback=None,
                  on_disconnect_callback=None):
@@ -983,7 +998,7 @@ class TCPAdapter:
     async def async_ping(self) -> None:
         self._check_connected()
         msg = " " + chr(3)
-        await self.async_send_message(msg.encode())
+        await self.async_send_message(ExtaLifeAPI.CMD_NOOP, msg.encode())
 
     async def _async_write(self, data: bytes) -> None:
         from datetime import datetime
@@ -996,12 +1011,14 @@ class TCPAdapter:
                 await self._tcp_writer.drain()
         except OSError as err:
             await self._async_on_error()
-            raise TCPConnError(
-                 "Error while writing data: {}".format(err))            # pylint: disable=raise-missing-from
+            raise TCPConnError("Error while writing data: {}".format(err)) from None
 
-    async def async_send_message(self, msg) -> None:    # pylint disable=raise-missing-from
+    async def async_send_message(self, command: int, msg: bytes) -> None:    # pylint disable=raise-missing-from
 
-        _LOGGER.debug("Sending:  %s", str(msg))
+        msg_str = str(msg)
+        if command == ExtaLifeAPI.CMD_LOGIN and not ExtaLifeAPI.is_debugger_active():
+            msg_str = re.sub(r'"password":\s*"[^"]*"', '"password": "********"', msg_str)
+        _LOGGER.debug("Sending:  %s", msg_str)
         await self._async_write(bytes(msg))
 
     async def async_send_message_await_response(self, send_msg, command: int, timeout: float = 30.0) -> list:
@@ -1026,17 +1043,16 @@ class TCPAdapter:
                     fut.set_result(responses)
 
             self._message_handlers.append(on_message)
-            await self.async_send_message(send_msg)
+            await self.async_send_message(command, send_msg)
 
             try:
                 await asyncio.wait_for(fut, timeout)
 
             except asyncio.TimeoutError:
                 if self._stopped:
-                    raise TCPConnError(
-                        "Disconnected while waiting for API response!")             # pylint: disable=raise-missing-from
+                    raise TCPConnError("Disconnected while waiting for API response!") from None
                 await self._async_on_error()
-                raise TCPConnError("Timeout while waiting for API response!")       # pylint: disable=raise-missing-from
+                raise TCPConnError("Timeout while waiting for API response!") from None
 
             try:
                 self._message_handlers.remove(on_message)                           # pylint: disable=raise-missing-from

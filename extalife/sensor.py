@@ -133,6 +133,7 @@ VIRTUAL_SENSOR_RESTRICTIONS = {
 
 # List of additional sensors which are created based on a property
 # The key is the property name
+# noinspection PyArgumentList
 SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
     SensorDeviceClass.WIND_SPEED: ELSensorEntityDescription(
         native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
@@ -313,21 +314,23 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
 
         return value
 
+    @staticmethod
+    def extra_state_attribute_update(src: dict, dst: dict, key: str):
+        if src.get(key) is not None:
+            dst.update({key: src.get(key)})
+
     @property
     def extra_state_attributes(self):
         """Return device specific state attributes."""
-        attr = super().extra_state_attributes
 
-        data = self.channel_data
-        if data.get("sync_time") is not None:
-            attr.update({"sync_time": data.get("sync_time")})
+        attrs = super().extra_state_attributes
 
-        if data.get("last_sync") is not None:
-            attr.update({"last_sync": data.get("last_sync")})
+        self.extra_state_attribute_update(self.channel_data, attrs, "sync_time")
+        self.extra_state_attribute_update(self.channel_data, attrs, "last_sync")
 
-        self.format_state_attr(attr)
+        self.format_state_attr(attrs)
 
-        return attr
+        return attrs
 
     def on_state_notification(self, data):
         """React on state notification from controller"""

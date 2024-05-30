@@ -67,7 +67,7 @@ class ExtaLifeServices:
             self._hass.services.async_remove(DOMAIN, service)
 
     def _handle_restart(self, call):
-        """ service: extalife.restart """
+        """ service: 'extalife.restart' """
         entity_id = call.data.get(CONF_ENTITY_ID)
 
         core = self._get_core(entity_id)

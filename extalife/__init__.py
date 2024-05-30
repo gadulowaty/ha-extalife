@@ -240,7 +240,9 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
     controller_ip = el_conf[CONF_CONTROLLER_IP]  # will be known after config flow
 
     try:
-        _LOGGER.info("ExtaLife initializing...")                # pylint: disable=hass-logger-period
+        _LOGGER.info("ExtaLife initializing... [Debugger attached: %s]",
+                     "YES" if ExtaLifeAPI.is_debugger_active() else "NO")
+
         if controller_ip is not None:
             _LOGGER.debug("Trying to connect to controller using IP: %s", controller_ip)
         else:

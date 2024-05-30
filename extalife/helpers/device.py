@@ -4,7 +4,7 @@ import logging
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers import device_registry as dr
 from homeassistant.config_entries import ConfigEntry
-from extalife.helpers.typing import CoreType
+from .typing import CoreType
 
 from ..pyextalife import (
     DEVICE_ARR_ALL_TRANSMITTER,
@@ -106,7 +106,7 @@ class Device:
 class DeviceFactory:
     @staticmethod
     def get_device(device: DeviceEntry, device_type) -> Device:  # subclass
-        if type in DEVICE_ARR_ALL_TRANSMITTER:
+        if device_type in DEVICE_ARR_ALL_TRANSMITTER:
             return TransmitterDevice(device, device_type)
         else:
             raise NotImplementedError
