@@ -404,7 +404,7 @@ class ChannelDataManager:
         self.core.async_signal_send(SIGNAL_DATA_UPDATED)
 
         _LOGGER.debug(
-            "Exta Life: status for %s devices updated", len(self.channels_indx)
+            "Exta Life: status for %d devices updated", len(self.channels_indx)
         )
 
         await self.async_discover_devices()
@@ -528,7 +528,7 @@ class ChannelDataManager:
             # store array of channels (variable 'channels') for each platform
             self.core.push_channels(component_name, channels, True)
             self._hass.async_create_task(
-                self.core.async_setup_custom_platforms(component_name)
+                self.core.async_setup_custom_platform(component_name)
             )
 
 

@@ -325,13 +325,14 @@ class Core:
         else:
             self._platforms[platform] = []
 
-    async def async_setup_custom_platforms(self, module):
+    async def async_setup_custom_platform(self, platform: str):
         """Setup other, custom (pseudo)platforms"""
 
         async_setup_entry = await self._hass.async_add_import_executor_job(import_executor_callback,
-                                                                           module, "async_setup_entry")
+                                                                           platform, "async_setup_entry")
         if async_setup_entry is not None:
             await async_setup_entry(self.hass, self.config_entry)
+            _LOGGER.debug("Custom platform '%s' has been configured")
 
     async def async_unload_custom_platforms(self):
         """Unload other, custom (pseudo)platforms"""
@@ -425,8 +426,8 @@ class Core:
 
         for target in target_list:
             _LOGGER.debug("async_signal_send(), target: %s", target)
-            # self._hass.async_create_task(target, *args)
-            self._hass.async_add_job(target, *args)
+            coroutine = target(*args)
+            self._hass.async_create_task(coroutine)
 
     def async_signal_send_sync(self, signal: str, args) -> None:
         """Send signal and data.
