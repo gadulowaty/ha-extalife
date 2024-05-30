@@ -3,7 +3,6 @@ import logging
 import importlib
 import datetime
 from typing import Callable, Any
-from concurrent.futures import ThreadPoolExecutor
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.entity import Entity
 from homeassistant.core import HomeAssistant
@@ -34,6 +33,22 @@ async def options_change_callback(hass: HomeAssistant, config_entry: ConfigEntry
 
     core = Core.get(config_entry.entry_id)
     core.data_manager.setup_periodic_callback()
+
+
+def import_executor_callback(module: str, func: str) -> Callable[[HomeAssistant, ConfigEntry], None] | None:
+
+    result = None
+    package = ".".join(__package__.split(".")[:-1])  # 1 level above current package
+    try:
+        _LOGGER.debug("_import_executor_callback(), module: %s, from: %s", module, package)
+        imp_module = importlib.import_module("." + module, package)
+
+        _LOGGER.debug("_import_executor_callback(), func: %s", func)
+        result = getattr(imp_module, func)
+    except Exception as err:
+        _LOGGER.warning("async_setup_custom_platforms(), failed to import module %s from package %s, %s",
+                        module, package, repr(err))
+    return result
 
 
 class Core:
@@ -313,42 +328,24 @@ class Core:
     async def async_setup_custom_platforms(self, module):
         """Setup other, custom (pseudo)platforms"""
 
-        package = ".".join(__package__.split(".")[:-1])  # 1 level above current package
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            _LOGGER.debug("async_setup_custom_platforms(), request module: %s (package: %s) [%s]",
-                          "." + module, package, __package__)
-            try:
-                future = executor.submit(importlib.import_module, "." + module, package=package)
-                module = future.result()
-                _LOGGER.debug("async_setup_custom_platforms(), module: %s", module)
-                func = getattr(module, "async_setup_entry")
-                _LOGGER.debug("async_setup_custom_platforms(), func: %s", func)
-                await func(self.hass, self.config_entry)
-            except Exception as ex:
-                _LOGGER.warning("async_setup_custom_platforms(), failed with msg '%s'", repr(ex))
+        async_setup_entry = await self._hass.async_add_import_executor_job(import_executor_callback,
+                                                                           module, "async_setup_entry")
+        if async_setup_entry is not None:
+            await async_setup_entry(self.hass, self.config_entry)
 
     async def async_unload_custom_platforms(self):
         """Unload other, custom (pseudo)platforms"""
 
-        package = ".".join(__package__.split(".")[:-1])  # 1 level above current package
         for platform, channels in self._platforms_cust.items():
 
             if platform.startswith("virtual"):
                 # virtual platforms does not have import module so cannot be unloaded
                 continue
 
-            try:
-                _LOGGER.debug("async_unload_custom_platforms(), request module: %s (package: %s) [%s]",
-                              "." + platform, package, __package__)
-                module = importlib.import_module("." + platform, package=package)
-                _LOGGER.debug("async_unload_custom_platforms(), module: %s", module)
-                func = getattr(module, "async_unload_entry")
-                _LOGGER.debug("async_unload_custom_platforms(), func: %s", func)
-                await func(self._hass, self.config_entry)
-            except ModuleNotFoundError as ex:
-                _LOGGER.debug("async_unload_custom_platforms(), failed with msg '%s'", repr(ex))
-                pass
+            async_unload_entry = await self._hass.async_add_import_executor_job(import_executor_callback,
+                                                                                platform, "async_unload_entry")
+            if async_unload_entry is not None:
+                await async_unload_entry(self.hass, self.config_entry)
 
     def storage_add(self, inst_id: str, inst_obj):
         self._storage.update({inst_id: inst_obj})
