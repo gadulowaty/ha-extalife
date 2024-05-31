@@ -10,17 +10,22 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 
 from .const import DATA_CORE, DOMAIN, CONF_EXTALIFE_EVENT_SCENE
-from ..pyextalife import ExtaLifeAPI
+from ..pyextalife import (
+    ExtaLifeAPI,
+    ExtaLifeCmd
+)
 from .typing import (
     ChannelDataManagerType,
     CoreType,
-    DeviceManagerType
+    DeviceManagerType,
+    ExtaLifeControllerType
 )
+
 from .services import ExtaLifeServices
 
 
 MAP_NOTIF_CMD_TO_EVENT = {
-    ExtaLifeAPI.CMD_ACTIVATE_SCENE: CONF_EXTALIFE_EVENT_SCENE
+    ExtaLifeCmd.ACTIVATE_SCENE: CONF_EXTALIFE_EVENT_SCENE
 }
 
 
@@ -91,7 +96,7 @@ class Core:
 
         self._inst[config_entry.entry_id] = self
 
-        self._config_entry = config_entry
+        self._config_entry: ConfigEntry = config_entry
         self._dev_manager = DeviceManager(config_entry, self)
         self._transmitter_manager = TransmitterManager(config_entry)
         self._api = ExtaLifeAPI(
@@ -103,7 +108,7 @@ class Core:
         self._track_time_callbacks = []
         self._platforms = dict()
         self._platforms_cust = dict()
-        self._data_manager = ChannelDataManager(self.hass, self.config_entry)
+        self._data_manager: ChannelDataManager = ChannelDataManager(self.hass, self.config_entry)
         self._api.set_notification_callback(self._on_status_notification_callback)
         self._queue = asyncio.Queue()
         self._queue_task = Core.get_hass().loop.create_task(self._queue_worker())
@@ -194,7 +199,7 @@ class Core:
             self._services = ExtaLifeServices(self._hass)
             await self._services.async_register_services()
 
-    def _on_reconnect_callback(self):
+    async def _on_reconnect_callback(self):
         """Execute actions on (re)connection to controller"""
 
         if self._periodic_reconnect_remove_callback is not None:
@@ -204,7 +209,7 @@ class Core:
         if self._controller_entity is not None:
             self._controller_entity.schedule_update_ha_state()
 
-    def _on_disconnect_callback(self):
+    async def _on_disconnect_callback(self):
         """Execute actions on disconnection with controller"""
 
         if self._is_unloading or self._is_stopping:
@@ -221,15 +226,16 @@ class Core:
             self._periodic_reconnect_callback, datetime.timedelta(seconds=30)
         )
 
-    def _on_status_notification_callback(self, msg):
+    # TODO: APIResponse not dict[str, Any]
+    async def _on_status_notification_callback(self, message: dict[str, Any]):
         if self._is_unloading or self._is_stopping:
             return
 
         # forward only state notifications to data manager to update channels
-        if msg.get("command") == self.api.CMD_CONTROL_DEVICE:
-            self._data_manager.on_notify(msg)
+        if message.get("command") == ExtaLifeCmd.CONTROL_DEVICE:
+            self._data_manager.on_notify(message)
 
-        self._put_notification_on_event_bus(msg)
+        self._put_notification_on_event_bus(message)
 
     # noinspection PyUnusedLocal
     async def _periodic_reconnect_callback(self, now):
@@ -237,19 +243,21 @@ class Core:
         This will be executed periodically until reconnection is successful"""
         await self.api.async_reconnect()
 
-    async def register_controller(self):
+    async def register_controller(self) -> None:
         """Register controller in Device Registry and create its entity"""
+
         from .. import ExtaLifeController
 
         await ExtaLifeController.register_controller(self.config_entry.entry_id)
 
-    def controller_entity_added_to_hass(self, entity):
+    def controller_entity_added_to_hass(self, entity: ExtaLifeControllerType):
         """Callback called by controller entity when the entity is added to HA
 
         entity - Entity object"""
         self._controller_entity = entity
 
-    def _put_notification_on_event_bus(self, msg):
+    # TODO: APIResponse not dict[str, Any]
+    def _put_notification_on_event_bus(self, msg: dict[str, Any]):
         """ This method raises a notification on HA Event Bus """
         data = msg.get("data")
         event = MAP_NOTIF_CMD_TO_EVENT.get(msg.get("command"))
@@ -265,7 +273,7 @@ class Core:
         return self._data_manager
 
     @property
-    def config_entry(self):
+    def config_entry(self) -> ConfigEntry:
         return self._config_entry
 
     @property

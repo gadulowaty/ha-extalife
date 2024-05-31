@@ -1,12 +1,23 @@
 """ ExtaLife JSON API wrapper library. Enables device control, discovery and status fetching from EFC-01 controller """
 from __future__ import print_function
-import sys
-import re
-import logging
-import socket
-import json
 import asyncio
+import json
+import logging
+import re
+import socket
+import sys
+
 from asyncio.events import AbstractEventLoop
+from datetime import datetime
+from enum import (
+    IntEnum,
+    StrEnum
+)
+from typing import (
+    Awaitable,
+    Callable,
+    Any
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -409,21 +420,24 @@ except ImportError:
     FAKE_RECEIVERS = FAKE_SENSORS = FAKE_TRANSMITTERS = []
 
 
+class ExtaLifeCmd(IntEnum):
+    """ Supported Exta Life controller commands"""
+
+    NOOP = 0
+    LOGIN = 1
+    CONTROL_DEVICE = 20
+    FETCH_RECEIVERS = 37
+    FETCH_SENSORS = 38
+    FETCH_TRANSMITTERS = 39
+    ACTIVATE_SCENE = 44
+    FETCH_NETWORK_SETTINGS = 102
+    FETCH_EXTA_FREE = 203
+    RESTART = 150
+    VERSION = 151
+
+
 class ExtaLifeAPI:
     """ Main API class: wrapper for communication with controller """
-
-    # Commands
-    CMD_NOOP = 0
-    CMD_LOGIN = 1
-    CMD_CONTROL_DEVICE = 20
-    CMD_FETCH_RECEIVERS = 37
-    CMD_FETCH_SENSORS = 38
-    CMD_FETCH_TRANSMITTERS = 39
-    CMD_ACTIVATE_SCENE = 44
-    CMD_FETCH_NETWORK_SETTINGS = 102
-    CMD_FETCH_EXTA_FREE = 203
-    CMD_VERSION = 151
-    CMD_RESTART = 150
 
     # Actions
     ACTION_TURN_ON = "TURN_ON"
@@ -474,8 +488,11 @@ class ExtaLifeAPI:
 
         return cls._debugger
 
-    def __init__(self, loop: AbstractEventLoop, on_notification_callback=None, on_connect_callback=None,
-                 on_disconnect_callback=None):
+    # TODO: APIResponse not dict[str, Any]
+    def __init__(self, loop: AbstractEventLoop,
+                 on_connect_callback: Callable[[], Awaitable] | None = None,
+                 on_disconnect_callback: Callable[[], Awaitable] | None = None,
+                 on_notification_callback: Callable[[dict[str, Any]], Awaitable] | None = None):
         """ API Object constructor
         on_connect - optional callback for notifications when API connects to the controller and performs
                     successful login
@@ -483,14 +500,15 @@ class ExtaLifeAPI:
         on_disconnect - optional callback for notifications when API loses connection to the controller """
 
         self.tcp: TCPAdapter | None = None
-        self._mac = None
+        self._mac: str | None = None
         self._sw_version: str | None = None
         self._name: str | None = None
 
         # set on_connect callback to notify caller
-        self._on_connect_callback = on_connect_callback
-        self._on_disconnect_callback = on_disconnect_callback
-        self._on_notification_callback = on_notification_callback
+        self._on_connect_callback: Callable[[], Awaitable] | None = on_connect_callback
+        self._on_disconnect_callback: Callable[[], Awaitable] | None = on_disconnect_callback
+        # TODO: APIResponse not dict[str, Any]
+        self._on_notification_callback: Callable[[dict[str, Any]], Awaitable] | None = on_notification_callback
 
         self._is_connected = False
 
@@ -501,14 +519,14 @@ class ExtaLifeAPI:
         self._password: str | None = None
         self._connection: TCPAdapter | None = None
 
-    async def async_connect(self, user: str, password: str, host: str | None = None, timeout: float = 30.0):
+    async def async_connect(self, user: str, password: str, host: str | None = None, timeout: float = 30.0) -> bool:
         """Connect & authenticate to the controller using user and password parameters"""
         self._host = host
         self._user = user
         self._password = password
 
         # perform controller autodiscovery if no IP specified
-        if self._host is None or self._host == '':
+        if self._host is None or self._host == "":
             future = await self._loop.run_in_executor(None, TCPAdapter.discover_controller)
             self._host = future.result()
 
@@ -517,12 +535,12 @@ class ExtaLifeAPI:
             raise TCPConnError("Could not find controller IP via autodiscovery")
 
         conn_params = ConnectionParams(self._host, self._user, self._password, self._loop)
-        conn_params.on_notification_callback = self._async_on_notification_callback
-        conn_params.on_connect_callback = self._async_on_tcp_connect_callback
-        conn_params.on_disconnect_callback = self._async_on_tcp_disconnect_callback
+        conn_params.on_connected_callback = self._async_do_tcp_connected_callback
+        conn_params.on_disconnected_callback = self._async_do_tcp_disconnected_callback
+        conn_params.on_notification_callback = self._async_do_tcp_notification_callback
 
         # init TCP adapter and try to connect
-        self._connection = TCPAdapter(conn_params)
+        self._connection: TCPAdapter = TCPAdapter(conn_params)
 
         # connect and login - may raise TCPConnErr
         _LOGGER.debug("Connecting to controller using IP: %s", self._host)
@@ -531,7 +549,7 @@ class ExtaLifeAPI:
         resp = await self._connection.async_login()
 
         # check response if login succeeded
-        if resp[0]["status"] != "success":
+        if resp[0]["status"] != APIStatus.SUCCESS:
             raise TCPConnError(resp)
 
         # determine controller MAC as its unique identifier
@@ -551,7 +569,7 @@ class ExtaLifeAPI:
     def host(self):
         return self._host
 
-    async def _async_on_tcp_connect_callback(self):
+    async def _async_do_tcp_connected_callback(self) -> None:
         """ Called when connectivity is (re)established and logged on successfully """
         self._is_connected = True
         # refresh software version info
@@ -559,24 +577,28 @@ class ExtaLifeAPI:
         await self.async_get_name()
 
         if self._on_connect_callback is not None:
-            await self._loop.run_in_executor(None, self._on_connect_callback)
+            # await self._loop.run_in_executor(None, self._on_connect_callback)
+            await self._on_connect_callback()
 
-    async def _async_on_tcp_disconnect_callback(self):
+    async def _async_do_tcp_disconnected_callback(self) -> None:
         """ Called when connectivity is lost """
         self._is_connected = False
 
         if self._on_disconnect_callback is not None:
-            await self._loop.run_in_executor(None, self._on_disconnect_callback)
+            # await self._loop.run_in_executor(None, self._on_disconnect_callback)
+            await self._on_disconnect_callback()
 
-    async def _async_on_notification_callback(self, data):
+    # TODO: APIResponse not dict[str, Any]
+    async def _async_do_tcp_notification_callback(self, data: dict[str, Any]) -> None:
         """ Called when notification from the controller is received """
-        if self._on_notification_callback(data) is not None:
-            # forward only device status changes to the listener
-            self._on_notification_callback(data)
 
-    def set_notification_callback(self, callback):
+        if self._on_notification_callback is not None:
+            # forward only device status changes to the listener
+            await self._on_notification_callback(data)
+
+    def set_notification_callback(self, notification_callback):
         """ update Notification callback assignment """
-        self._on_notification_callback = callback
+        self._on_notification_callback = notification_callback
 
     @property
     def is_connected(self) -> bool:
@@ -594,14 +616,14 @@ class ExtaLifeAPI:
 
     async def async_get_version_info(self):
         """ Get controller software version """
-        cmd_data = {"data": None}
+
         try:
-            resp = await self._connection.async_execute_command(self.CMD_VERSION, cmd_data)
+            resp = await self._connection.async_execute_command(ExtaLifeCmd.VERSION, None)
             self._sw_version = resp[0]["data"]["new_version"]
             return self._sw_version
 
         except TCPCmdError:
-            _LOGGER.error("Command %s could not be executed", self.CMD_VERSION)
+            _LOGGER.error("Command %s could not be executed", ExtaLifeCmd.VERSION)
             return
 
     async def async_get_mac(self):
@@ -616,7 +638,7 @@ class ExtaLifeAPI:
     async def async_get_network_settings(self):
         """ Executes command 102 to get network settings and controller name """
 
-        cmd = self.CMD_FETCH_NETWORK_SETTINGS
+        cmd: ExtaLifeCmd = ExtaLifeCmd.FETCH_NETWORK_SETTINGS
         try:
             resp = await self._connection.async_execute_command(cmd, None)
             return resp[0].get("data")
@@ -637,35 +659,35 @@ class ExtaLifeAPI:
         return self._name
 
     async def async_get_channels(self, include=(CHN_TYP_RECEIVERS, CHN_TYP_SENSORS, CHN_TYP_TRANSMITTERS,
-                                                CHN_TYP_EXTA_FREE_RECEIVERS)):
+                                                CHN_TYP_EXTA_FREE_RECEIVERS)) -> list | None:
         """
         Get list of dicts of Exta Life channels consisting of native Exta Life TCP JSON
         data, but with transformed data model. Each channel will have native channel info
         AND device info. 2 channels of the same device will have the same device attributes
         """
-        cmd = self.CMD_NOOP
+        cmd: ExtaLifeCmd = ExtaLifeCmd.NOOP
         try:
             channels = list()
             if self.CHN_TYP_RECEIVERS in include:
-                cmd = self.CMD_FETCH_RECEIVERS
+                cmd = ExtaLifeCmd.FETCH_RECEIVERS
                 resp = await self._connection.async_execute_command(cmd, None)
                 # here is where the magic happens - transform TCP JSON data into API channel representation
                 resp.extend(FAKE_RECEIVERS)
                 channels.extend(self._get_channels_int(resp))
 
             if self.CHN_TYP_SENSORS in include:
-                cmd = self.CMD_FETCH_SENSORS
+                cmd = ExtaLifeCmd.FETCH_SENSORS
                 resp = await self._connection.async_execute_command(cmd, None)
                 resp.extend(FAKE_SENSORS)
                 channels.extend(self._get_channels_int(resp))
 
             if self.CHN_TYP_TRANSMITTERS in include:
-                cmd = self.CMD_FETCH_TRANSMITTERS
+                cmd = ExtaLifeCmd.FETCH_TRANSMITTERS
                 resp = await self._connection.async_execute_command(cmd, None)
                 channels.extend(self._get_channels_int(resp, dummy_ch=True))
 
             if self.CHN_TYP_EXTA_FREE_RECEIVERS in include:
-                cmd = self.CMD_FETCH_EXTA_FREE
+                cmd = ExtaLifeCmd.FETCH_EXTA_FREE
                 resp = await self._connection.async_execute_command(cmd, None)
                 channels.extend(self._get_channels_int(resp))
 
@@ -802,7 +824,7 @@ class ExtaLifeAPI:
         # this assumes the right fields are passed to the API
         cmd_data.update(**fields)
 
-        cmd = self.CMD_CONTROL_DEVICE
+        cmd: ExtaLifeCmd = ExtaLifeCmd.CONTROL_DEVICE
         try:
             resp = await self._connection.async_execute_command(cmd, cmd_data)
             _LOGGER.debug("JSON response for command %s: %s", cmd, resp)
@@ -816,7 +838,7 @@ class ExtaLifeAPI:
     async def async_restart(self):
         """ Restart EFC-01 """
 
-        cmd = self.CMD_RESTART
+        cmd: ExtaLifeCmd = ExtaLifeCmd.RESTART
         try:
             cmd_data = dict()
 
@@ -866,9 +888,10 @@ class ConnectionParams:
         self._user: str = user
         self._password: str = password
         self._keepalive: float = keepalive
-        self.on_connect_callback = None
-        self.on_disconnect_callback = None
-        self.on_notification_callback = None
+        self.on_connected_callback: Callable[[], Awaitable] | None = None
+        self.on_disconnected_callback: Callable[[], Awaitable] | None = None
+        # TODO: APIResponse not dict[str, Any]
+        self.on_notification_callback: Callable[[dict[str, Any]], Awaitable] | None = None
 
     @property
     def host(self) -> str:
@@ -892,17 +915,18 @@ class ConnectionParams:
 
 
 class APIMessage:
-    def __init__(self):
-        self.command = str()
-        self.data = dict()
+    def __init__(self, command: ExtaLifeCmd = ExtaLifeCmd.NOOP):
+        self.command: ExtaLifeCmd = command
+        self.data: dict[str, Any] = {"data": None}
 
 
 class APIRequest(APIMessage):
 
-    def __init__(self, command: int, data: dict) -> None:
-        super().__init__()
+    def __init__(self, command: ExtaLifeCmd, data: dict[str, Any] | None = None) -> None:
+        super().__init__(command)
         self.command = command
-        self.data = data
+        if data:
+            self.data = data
 
     def as_dict(self):
         return {"command": self.command, "data": self.data}
@@ -910,23 +934,34 @@ class APIRequest(APIMessage):
     def as_json(self):
         return json.dumps(self.as_dict())
 
+    def as_string(self) -> str:
+        return str(self.as_json()) if self.command != ExtaLifeCmd.NOOP else " "
+
+    def as_bytes(self) -> bytes:
+        return (self.as_string() + chr(3)).encode()
+
+
+class APIStatus(StrEnum):
+    SUCCESS = "success"
+    SEARCHING = "searching"
+    FAILURE = "failure"
+    PARTIAL = "partial"
+    NOTIFICATION = "notification"
+
 
 class APIResponse(APIMessage):
-    def __init__(self, json_d: dict) -> None:
-        super().__init__()
-        self._as_dict = json_d
-        self.command = json_d.get("command")
-        self.data = json_d.get("data")
-        self.status = json_d.get("status")
+
+    def __init__(self, json_obj: dict[str, Any]) -> None:
+        super().__init__(ExtaLifeCmd(json_obj.get("command")))
+        self._as_dict: dict[str, Any] = json_obj
+        self.data = json_obj.get("data")
+        self.status: APIStatus = APIStatus(json_obj.get("status"))
 
     @classmethod
-    def from_json(cls, json_str: str):
-        # print(json_str[:-1])
-        json_dict = json.loads(json_str[:-1])
+    def from_json(cls, json_str: str) -> "APIResponse":
+        return APIResponse(json.loads(json_str[:-1]))
 
-        return APIResponse(json_dict)
-
-    def as_dict(self):
+    def as_dict(self) -> dict[str, Any]:
         return self._as_dict
 
 
@@ -939,25 +974,14 @@ class TCPAdapter:
 
     def __init__(self, params: ConnectionParams) -> None:
 
-        from datetime import datetime
-
-        self._params = params
-        self.user = None
-        self.password = None
-        self.host = None
-
-        self._on_connect_callback = params.on_connect_callback
-        self._on_disconnect_callback = params.on_disconnect_callback
-
-        self.tcp = None
-
-        self._connected = False
-        self._stopped = False
-        self._authenticated = False
+        self._params: ConnectionParams = params
+        self._connected: bool = False
+        self._stopped: bool = False
+        self._authenticated: bool = False
         self._tcp_reader: asyncio.StreamReader | None = None     # type asyncio.StreamReader
         self._tcp_writer: asyncio.StreamWriter | None = None     # type asyncio.StreamWriter
-        self._write_lock = asyncio.Lock()
-        self._cmd_exec_lock = asyncio.Lock()
+        self._write_lock: asyncio.Lock = asyncio.Lock()
+        self._cmd_exec_lock: asyncio.Lock = asyncio.Lock()
         self._running_task = None
         self._socket = None
         self._socket_connected = False
@@ -966,7 +990,7 @@ class TCPAdapter:
 
         self._tcp_last_write = datetime.now()
 
-        self._message_handlers = []
+        self._response_handlers: list[Callable[[APIResponse], None]] = []
 
     def _start_ping(self) -> None:
         """ Perform "smart" ping task. Send ping if nothing was sent to socket in the last keepalive-time period """
@@ -995,12 +1019,7 @@ class TCPAdapter:
 
         _LOGGER.debug("_ping_() - task ends")
 
-    async def async_ping(self) -> None:
-        self._check_connected()
-        msg = " " + chr(3)
-        await self.async_send_message(ExtaLifeAPI.CMD_NOOP, msg.encode())
-
-    async def _async_write(self, data: bytes) -> None:
+    async def _async_post_data(self, data: bytes) -> None:
         from datetime import datetime
         if not self._socket_connected:
             raise TCPConnError("Socket is not connected")
@@ -1013,37 +1032,40 @@ class TCPAdapter:
             await self._async_on_error()
             raise TCPConnError("Error while writing data: {}".format(err)) from None
 
-    async def async_send_message(self, command: int, msg: bytes) -> None:    # pylint disable=raise-missing-from
+    async def async_post_request(self, request: APIRequest) -> None:    # pylint disable=raise-missing-from
 
-        msg_str = str(msg)
-        if command == ExtaLifeAPI.CMD_LOGIN and not ExtaLifeAPI.is_debugger_active():
-            msg_str = re.sub(r'"password":\s*"[^"]*"', '"password": "********"', msg_str)
-        _LOGGER.debug("Sending:  %s", msg_str)
-        await self._async_write(bytes(msg))
+        request_data = request.as_bytes()
+        request_str = str(request_data)
+        if request.command == ExtaLifeCmd.LOGIN and not ExtaLifeAPI.is_debugger_active():
+            request_str = re.sub(r'"password":\s*"[^"]*"', '"password": "********"', request_str)
+        _LOGGER.debug(">>> [Cmd=%s] %s", request.command.name, request_str)
 
-    async def async_send_message_await_response(self, send_msg, command: int, timeout: float = 30.0) -> list:
+        await self._async_post_data(request_data)
+
+    # TODO: APIResponse not dict[str, Any]
+    async def async_send_request(self, request: APIRequest,
+                                 timeout: float = 30.0) -> list[dict[str, Any]]:
         """ Send message to controller and await response """
         # prevent controller overloading and command loss - wait until finished (lock released)
         async with self._cmd_exec_lock:
             fut = self._params.eventloop.create_future()
             responses = []
 
-            def on_message(resp: APIResponse):
-                _LOGGER.debug("on_message(), resp: %s", resp.as_dict())
-                if fut.done():
+            def on_message(response: APIResponse) -> None:
+
+                if fut.done() or response.command != request.command:
                     return
 
-                if resp.command != command:
-                    return
+                _LOGGER.debug("on_message(), response for %s, status %s", response.command.name, response.status.name)
 
-                if resp.status == "searching":
-                    responses.append(resp.as_dict())
-                elif resp.status in ("success", "failure", "partial"):
-                    responses.append(resp.as_dict())
+                if response.status == APIStatus.SEARCHING:
+                    responses.append(response.as_dict())
+                elif response.status in (APIStatus.SUCCESS, APIStatus.FAILURE, APIStatus.PARTIAL):
+                    responses.append(response.as_dict())
                     fut.set_result(responses)
 
-            self._message_handlers.append(on_message)
-            await self.async_send_message(command, send_msg)
+            self._response_handlers.append(on_message)
+            await self.async_post_request(request)
 
             try:
                 await asyncio.wait_for(fut, timeout)
@@ -1055,19 +1077,18 @@ class TCPAdapter:
                 raise TCPConnError("Timeout while waiting for API response!") from None
 
             try:
-                self._message_handlers.remove(on_message)                           # pylint: disable=raise-missing-from
+                self._response_handlers.remove(on_message)                          # pylint: disable=raise-missing-from
             except ValueError:
                 pass
 
             return responses
 
-    async def async_execute_command(self, command: int, data) -> list:
+    async def async_post_command(self, command: ExtaLifeCmd, data: dict[str, any] | None = None) -> None:
+        await self.async_post_request(APIRequest(command, data))
 
-        # request = {"command": command, "data": data}
-        # req = self._json_to_tcp(request)
-        req = APIRequest(command, data)
-        msg = str(req.as_json() + chr(3)).encode()
-        response = await self.async_send_message_await_response(msg, command)
+    async def async_execute_command(self, command: ExtaLifeCmd, data: dict[str, any] | None = None) -> list:
+
+        response = await self.async_send_request(APIRequest(command, data))
 
         if len(response) == 0:
             raise TCPConnError("No response received from Controller!")
@@ -1077,11 +1098,11 @@ class TCPAdapter:
     async def _async_recv(self) -> bytes:
 
         try:
-            ret = await self._tcp_reader.readuntil(chr(3).encode())
+            result = await self._tcp_reader.readuntil(chr(3).encode())
         except (asyncio.IncompleteReadError, OSError, TimeoutError) as err:
             raise TCPConnError("Error while receiving data: {}".format(err)) from err
 
-        return ret
+        return result
 
     def _check_connected(self) -> None:
         if not self._connected:
@@ -1144,6 +1165,12 @@ class TCPAdapter:
 
         self._start_ping()
 
+    async def async_ping(self) -> None:
+        """Perform dummy data posting to connected controller"""
+        self._check_connected()
+        await self.async_post_command(ExtaLifeCmd.NOOP)
+
+    # TODO: APIResponse not list
     async def async_login(self) -> list:
         """
         Try to log on via command: 1
@@ -1155,9 +1182,13 @@ class TCPAdapter:
         if self._authenticated:
             raise TCPConnError("Already logged in!")
 
-        _LOGGER.debug("Logging in... [user: %s, password: %s]", self._params.user, "*" * len(self._params.password))
-        resp_js = await self.async_execute_command(ExtaLifeAPI.CMD_LOGIN, {"password": self._params.password,
-                                                                           "login": self._params.user})
+        _LOGGER.debug("Logging in... [user: %s, password: %s]",
+                      self._params.user, "*" * len(self._params.password))
+        cmd_data = {
+            "password": self._params.password,
+            "login": self._params.user
+        }
+        resp_js = await self.async_execute_command(ExtaLifeCmd.LOGIN, cmd_data)
 
         if resp_js[0].get("status") == "failure" and resp_js[0].get("data").get("code") == -2:
             # pass
@@ -1167,7 +1198,7 @@ class TCPAdapter:
 
         _LOGGER.debug("Authenticated")
 
-        await self._async_event_connect()
+        await self._async_do_connected()
 
         return resp_js
 
@@ -1189,24 +1220,19 @@ class TCPAdapter:
 
     async def _async_run_once(self) -> None:
 
-        raw_msg = await self._async_recv()
+        message_raw = await self._async_recv()
 
-        msg = raw_msg.decode()
+        message_str = message_raw.decode()
 
-        resp = APIResponse.from_json(msg)
-        _LOGGER.debug("_async_run_once, msg: %s", msg)
+        response: APIResponse = APIResponse.from_json(message_str)
+        _LOGGER.debug("<<< [Cmd=%s] %s", response.command.name, message_str)
 
-        for msg_handler in self._message_handlers[:]:
-            msg_handler(resp)
-
-        await self._handle_notification(resp)
-
-    async def _handle_notification(self, resp: APIResponse):
-        _LOGGER.debug("_handle_notification(), resp: %s", resp.as_dict())
+        for response_handler in self._response_handlers[:]:
+            response_handler(response)
 
         # pass only status change notifications to registered listeners
-        if resp.status == "notification" and self._params.on_notification_callback is not None:
-            await self._params.on_notification_callback(resp.as_dict())
+        if response.status == APIStatus.NOTIFICATION and self._params.on_notification_callback is not None:
+            await self._params.on_notification_callback(response.as_dict())
 
     async def _async_on_error(self) -> None:
         await self.async_stop(force=True)
@@ -1234,17 +1260,17 @@ class TCPAdapter:
 
         await self._close_socket()
 
-        await self._async_event_disconnect()
+        await self._async_do_disconnected()
 
-    async def _async_event_connect(self):
+    async def _async_do_connected(self):
         """ Notify of (re)connection by calling provided callback """
-        if self._on_connect_callback is not None:
-            await self._on_connect_callback()
+        if self._params.on_connected_callback is not None:
+            await self._params.on_connected_callback()
 
-    async def _async_event_disconnect(self):
+    async def _async_do_disconnected(self):
         """ Notify of lost connection by calling provided callback """
-        if self._on_disconnect_callback is not None:
-            await self._on_disconnect_callback()
+        if self._params.on_disconnected_callback is not None:
+            await self._params.on_disconnected_callback()
 
     @staticmethod
     def discover_controller():
@@ -1252,8 +1278,8 @@ class TCPAdapter:
         Perform controller autodiscovery using UDP query
         return IP as string or false if not found
         """
-        multicast_group = "225.0.0.1"
-        multicast_port = 20401
+        multicast_group: str = "225.0.0.1"
+        multicast_port: int = 20401
         import struct
 
         # sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1278,12 +1304,14 @@ class TCPAdapter:
 
         sock.settimeout(3)
         try:
-            data, address = sock.recvfrom(1024)
+            (data, address) = sock.recvfrom(1024)
         except socket.error:
             sock.close()
             return
         sock.close()
+
         _LOGGER.debug("Got multicast response from EFC-01: %s", str(data.decode()))
+
         if data == b'{"status":"broadcast","command":0,"data":null}\x03':
             return address[0]  # return IP - array[0]; array[1] is sender's port
         return

@@ -1,8 +1,13 @@
 """Support for ExtaLife devices."""
-from datetime import timedelta
+import datetime
 import logging
-from typing import Any
 import voluptuous as vol
+
+from datetime import timedelta
+from typing import (
+    Callable,
+    Any
+)
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -223,10 +228,10 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
         if options_def != options or not config_entry.options:
             hass.config_entries.async_update_entry(config_entry, options=options_def)
 
-    async def api_connect(conn_user, conn_password, conn_host):
-        result = Core.get(config_entry.entry_id).api
-        await result.async_connect(conn_user, conn_password, host=conn_host)
-        return result
+    async def api_connect(conn_user, conn_password, conn_host) -> ExtaLifeAPI:
+        el_controller = Core.get(config_entry.entry_id).api
+        await el_controller.async_connect(conn_user, conn_password, host=conn_host)
+        return el_controller
 
     init_options()
 
@@ -235,9 +240,9 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
     el_conf = config_entry.data
     core = Core.get(config_entry.entry_id)
 
-    data = core.data_manager
+    data_manager: ChannelDataManager = core.data_manager
 
-    controller_ip = el_conf[CONF_CONTROLLER_IP]  # will be known after config flow
+    controller_ip: str = el_conf[CONF_CONTROLLER_IP]  # will be known after config flow
 
     try:
         _LOGGER.info("ExtaLife initializing... [Debugger attached: %s]",
@@ -300,9 +305,7 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry):
 
     await core.register_controller()
 
-    core = Core.get(config_entry.entry_id)
-
-    await data.async_start_polling(poll_now=True)
+    await data_manager.async_execute_status_polling(True)
 
     # publish services to HA service registry
     await core.async_register_services()
@@ -317,20 +320,17 @@ class ChannelDataManager:
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the data object."""
         self.data = None
-        self._hass = hass
-        self._config_entry = config_entry
+        self._hass: HomeAssistant = hass
+        self._config_entry: ConfigEntry = config_entry
         self._listeners = []
 
         self.channels_indx = {}
         self.initial_channels = {}
 
-        # self._notif_listener: NotifThreadListener = None
-
-        self._poller_callback_remove = None
-        self._ping_callback_remove = None
+        self._poller_callback_remove: Callable[[], None] | None = None
 
     @property
-    def core(self):
+    def core(self) -> Core:
         return Core.get(self._config_entry.entry_id)
 
     @property
@@ -338,9 +338,10 @@ class ChannelDataManager:
         return Core.get(self._config_entry.entry_id).api
 
     # callback
-    def on_notify(self, msg):
-        _LOGGER.debug("Received status change notification from controller: %s", msg)
-        data = msg.get("data")
+    # TODO: APIResponse not dict[str, Any]
+    def on_notify(self, message: dict[str, Any]):
+        _LOGGER.debug("Received status change notification from controller: %s", message)
+        data = message.get("data")
         channel = data.get("channel", "#")
         channel_id = str(data.get("id")) + "-" + str(channel)
 
@@ -351,25 +352,21 @@ class ChannelDataManager:
         else:
             self.core.async_signal_send_sync(signal, data)
 
-    def update_channel(self, channel_id: str, channel_data: dict):
+    def update_channel(self, channel_id: str, channel_data: dict) -> None:
         """Update data of a channel e.g. after notification data received and processed
         by an entity"""
+
         self.channels_indx.update({channel_id: channel_data})
 
-    async def async_start_polling(self, poll_now: bool):
-        """Start cyclic status polling
-
-        poll_now - fetch devices' status immediately and don't wait for the nearest poll"""
-
-        if poll_now:
-            await self.async_execute_status_polling()
-
-    async def async_execute_status_polling(self):
+    async def async_execute_status_polling(self, poll_now: bool = True) -> None:
         """Executes status polling triggered externally, not via periodic callback + resets next poll time"""
+
         if self._poller_callback_remove is not None:
             self._poller_callback_remove()
+        self._poller_callback_remove = None
 
-        await self._async_update_callback()
+        if poll_now:
+            await self._async_update_callback()
 
         self.setup_periodic_callback()
 
@@ -378,13 +375,13 @@ class ChannelDataManager:
 
         if self._poller_callback_remove is not None:
             self._poller_callback_remove()
-            self._poller_callback_remove = None
+        self._poller_callback_remove = None
 
-    async def _async_update_callback(self, now=None):
+    async def _async_update_callback(self, now: datetime = None) -> None:
         """Get the latest device&channel status data from EFC-01.
         This method is called from HA task scheduler via async_track_time_interval"""
 
-        _LOGGER.debug("Executing EFC-01 status polling....")    # pylint: disable=hass-logger-period
+        _LOGGER.debug("Executing EFC-01 status polling")
         # use Exta Life TCP communication class
 
         # if connection error or other - will receive None
@@ -414,7 +411,7 @@ class ChannelDataManager:
             # store only for the 1st call (by setup code, not by HA)
             self.initial_channels = self.channels_indx.copy()
 
-    def setup_periodic_callback(self):
+    def setup_periodic_callback(self) -> None:
         """(Re)set periodic callback period based on options"""
 
         # register callback for periodic status update polling + device discovery
@@ -816,12 +813,12 @@ class ExtaLifeChannel(Entity):
 class ExtaLifeController(Entity):
     """Base class of a ExtaLife Channel (an equivalent of HA's Entity)."""
 
-    def __init__(self, entry_id):
-        self._entry_id = entry_id
-        self._core = Core.get(entry_id)
+    def __init__(self, entry_id: str):
+        self._entry_id: str = entry_id
+        self._core: Core = Core.get(entry_id)
 
     @staticmethod
-    async def register_controller(entry_id):
+    async def register_controller(entry_id: str) -> None:
         """Create Controller entity and create device for it in Dev. Registry
 
         entry_id - Config Entry entry_id"""
@@ -843,7 +840,7 @@ class ExtaLifeController(Entity):
             [ExtaLifeController(core.config_entry.entry_id)]
         )
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity added to HA"""
 
         # let the Core know about the controller entity
@@ -868,7 +865,7 @@ class ExtaLifeController(Entity):
         return False
 
     @property
-    def core(self):
+    def core(self) -> Core:
         return Core.get(self._entry_id)
 
     @property
