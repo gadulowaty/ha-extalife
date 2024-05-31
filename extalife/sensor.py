@@ -309,7 +309,7 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
 
         value = self.get_value_from_attr_path(self._config.value_path)
 
-        if value and type(value) is str:
+        if value:
             value = value * self._config.factor
 
         return value
