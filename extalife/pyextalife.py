@@ -1272,11 +1272,18 @@ class TCPAdapter:
             self._ping_task.cancel()
             try:
                 await self._ping_task
-            except asyncio.CancelledError:
+            except asyncio.CancelledError as err:
+                _LOGGER.debug( "ping_task has been canceled, %s", err)
                 pass
+            self._ping_task = None
 
         if self._reader_task is not None:
             self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError as err:
+                _LOGGER.debug("reader_task has been canceled, %s", err)
+                pass
             self._reader_task = None
 
         await self._close_socket()

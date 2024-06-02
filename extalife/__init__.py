@@ -198,11 +198,15 @@ async def async_setup_entry(
         config_entry: ConfigEntry) -> bool:
     """Set up Exta Life component from a Config Entry"""
 
-    _LOGGER.debug("Inside async_setup_entry. %s", config_entry.data)
+    _LOGGER.debug("async_setup_entry(): starting for %s", config_entry.entry_id)
 
     hass.data.setdefault(DOMAIN, {})
     Core.create(hass, config_entry)
-    return await initialize(hass, config_entry)
+    result = await initialize(hass, config_entry)
+
+    _LOGGER.debug("async_setup_entry(): finished for %s", config_entry.entry_id)
+
+    return result
 
 
 # noinspection PyUnusedLocal
@@ -211,10 +215,14 @@ async def async_unload_entry(
         config_entry: ConfigEntry) -> bool:
     """Unload a config entry: unload platform entities, stored data, deregister signal listeners"""
 
-    core = Core.get(config_entry.entry_id)
-    await core.unload_entry_from_hass()
+    _LOGGER.debug("async_unload_entry(): starting for %s", config_entry.entry_id)
 
-    return True
+    core = Core.get(config_entry.entry_id)
+    result = await core.unload_entry_from_hass()
+
+    _LOGGER.debug("async_unload_entry(): finished for %s", config_entry.entry_id)
+
+    return result
 
 
 async def initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -310,15 +318,14 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
                 "Error communicating with the EFC-01 controller. Return data %s",
                 sw_version,
             )
-
             return False
 
-    except TCPConnError:
+    except TCPConnError as err:
         host = controller.host if (controller and controller.host) else "unknown"
         _LOGGER.error("Could not connect to EFC-01 on IP: %s", host)
 
         await core.unload_entry_from_hass()
-        raise ConfigEntryNotReady from None
+        raise ConfigEntryNotReady from err
 
     await core.register_controller()
 
@@ -875,7 +882,13 @@ class ExtaLifeController(Entity):
             scan_interval=DEFAULT_SCAN_INTERVAL,
         )
         platform.config_entry = core.config_entry
-        await platform.async_add_entities([ExtaLifeController(core.config_entry.entry_id)])
+
+        exta_life_controller = ExtaLifeController(core.config_entry.entry_id)
+        await platform.async_add_entities([exta_life_controller])
+
+    async def unregister_controller(self) -> None:
+        if self.platform:
+            await self.platform.async_remove_entity(self.entity_id)
 
     async def async_added_to_hass(self) -> None:
         """When entity added to HA"""
@@ -905,7 +918,7 @@ class ExtaLifeController(Entity):
 
     @property
     def core(self) -> Core:
-        return Core.get(self._entry_id)
+        return self._core
 
     @property
     def api(self) -> ExtaLifeAPI:

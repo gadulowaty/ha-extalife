@@ -120,13 +120,13 @@ class Core:
             options_change_callback
         )
 
-        self._controller_entity: Entity | None = None
+        self._controller_entity: ExtaLifeControllerType | None = None
 
         self._storage = {}
 
         self._is_unloading = False
 
-    async def unload_entry_from_hass(self):
+    async def unload_entry_from_hass(self) -> bool:
         """Called when ConfigEntry is unloaded from Home Assistant"""
         self._is_unloading = True
 
@@ -146,8 +146,12 @@ class Core:
 
         await self.async_unload_custom_platforms()
 
+        await self.unregister_controller()
+
         # remove instance only after everything is unloaded
         self._inst.pop(self.config_entry.entry_id)
+
+        return True
 
     # noinspection PyUnusedLocal
     @classmethod
@@ -243,6 +247,12 @@ class Core:
         This will be executed periodically until reconnection is successful"""
         await self.api.async_reconnect()
 
+    async def unregister_controller(self) -> None:
+        """Unregister controller from Device Registry"""
+        if self._controller_entity:
+            await self._controller_entity.unregister_controller()
+        self._controller_entity = None
+
     async def register_controller(self) -> None:
         """Register controller in Device Registry and create its entity"""
 
@@ -250,10 +260,10 @@ class Core:
 
         await ExtaLifeController.register_controller(self.config_entry.entry_id)
 
-    def controller_entity_added_to_hass(self, entity: ExtaLifeControllerType):
+    def controller_entity_added_to_hass(self, entity: ExtaLifeControllerType) -> None:
         """Callback called by controller entity when the entity is added to HA
 
-        entity - Entity object"""
+        entity - ExtaLifeController object"""
         self._controller_entity = entity
 
     # TODO: APIResponse not dict[str, Any]
@@ -300,7 +310,7 @@ class Core:
         for callback in self._track_time_callbacks:
             callback()
 
-        self._track_time_callbacks = list()
+        self._track_time_callbacks = []
 
     def push_channels(self, platform: str, channels_data: list[dict[str, Any]], custom=False, append=False):
         """Store channel data temporarily for platform setup
