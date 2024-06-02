@@ -1,7 +1,9 @@
 """Support for Exta Life transmitter devices"""
 import logging
 from pprint import pformat
-
+from typing import (
+    Any,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -17,7 +19,9 @@ CORE_STORAGE_ID = 'transmitter_mgr'
 
 
 # noinspection PyUnusedLocal
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
+async def async_setup_entry(
+        hass: HomeAssistant,
+        config_entry: ConfigEntry):
     """Set up Exta Life transmitters based on existing config."""
 
     core = Core.get(config_entry.entry_id)
@@ -51,7 +55,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
 
 class ExtaLifeTransmitter(PseudoPlatform):
-    def __init__(self, config_entry: ConfigEntry, channel_data: dict):
+    def __init__(self, config_entry: ConfigEntry, channel_data: dict[str, Any]):
         super().__init__(config_entry, channel_data)
 
         self._event_processor = None
@@ -81,17 +85,17 @@ class ExtaLifeTransmitter(PseudoPlatform):
 
 class TransmitterManager:
     def __init__(self, config_entry: ConfigEntry):
-        self._core = Core.get(config_entry.entry_id)
-        self._hass = self._core.hass
+        self._core: Core = Core.get(config_entry.entry_id)
+        self._hass: HomeAssistant = self._core.hass
 
         self._config_entry = config_entry
 
-        self._transmitters = dict()
+        self._transmitters: dict[id, str] = {}
 
     @property
-    def dev_manager(self) -> DeviceManagerType:
+    def device_manager(self) -> DeviceManagerType:
         # return self._hass.data[DOMAIN][DATA_DEV_MANAGER]
-        return self._core.dev_manager
+        return self._core.device_manager
 
     async def add(self, channel_data: dict):
         """ Add transmitter instance to buffer """
@@ -105,7 +109,7 @@ class TransmitterManager:
     async def register_device(self, transmitter: ExtaLifeTransmitter):
         """ Register transmitter in Device Registry """
 
-        device = await self.dev_manager.async_add(transmitter.device_type, transmitter.device_info)
+        device = await self.device_manager.async_add(transmitter.device_type, transmitter.device_info)
         transmitter.assign_device(device)
 
     async def unload_transmitters(self):

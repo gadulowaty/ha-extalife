@@ -4,7 +4,15 @@ and fake lights (on/off switches: ROP,ROM devices) mapped as light in HA
 """
 import logging
 from pprint import pformat
+from typing import (
+    Any,
+)
 
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import (
+    ConfigType,
+    DiscoveryInfoType,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.light import (
     ColorMode,
@@ -16,6 +24,7 @@ from homeassistant.components.light import (
     DOMAIN as DOMAIN_LIGHT,
 )
 from homeassistant.core import HomeAssistant
+import homeassistant.util.color as color_util
 
 from . import ExtaLifeChannel
 from .helpers.const import DOMAIN_VIRTUAL_LIGHT_SENSOR
@@ -25,8 +34,6 @@ from .pyextalife import (       # pylint: disable=syntax-error
     ExtaLifeDeviceModel,
     DEVICE_ARR_ALL_LIGHT
 )
-
-import homeassistant.util.color as color_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,41 +78,41 @@ MAP_MODE_VAL_EFFECT = {
 }
 MAP_EFFECT_MODE_VAL = {v: k for k, v in MAP_MODE_VAL_EFFECT.items()}
 
-SUPPORT_BRIGHTNESS = (
+SUPPORT_BRIGHTNESS = [
     ExtaLifeDeviceModel.RDP21,
     ExtaLifeDeviceModel.SLN21,
     ExtaLifeDeviceModel.SLN22,
     ExtaLifeDeviceModel.SLR21,
     ExtaLifeDeviceModel.SLR22,
-)
-SUPPORT_COLOR = (
+]
+SUPPORT_COLOR = [
     ExtaLifeDeviceModel.SLN22,
     ExtaLifeDeviceModel.SLR22,
-)
-SUPPORT_WHITE = (
+]
+SUPPORT_WHITE = [
     ExtaLifeDeviceModel.SLN22,
     ExtaLifeDeviceModel.SLR22,
-)
-SUPPORT_EFFECT = (
+]
+SUPPORT_EFFECT = [
     ExtaLifeDeviceModel.SLN22,
     ExtaLifeDeviceModel.SLR22,
-)
+]
 
 
-def scale_to_255(value):
+def scale_to_255(value: float) -> int:
     """Scale the input value from 0-100 to 0-255."""
-    return max(0, min(255, ((value * 255.0) / 100.0)))
+    return max(0, min(255, int((value * 255.0) / 100.0)))
 
 
-def scale_to_100(value):
+def scale_to_100(value: float) -> int:
     """Scale the input value from 0-255 to 0-100."""
     # Make sure a low but non-zero value is not rounded down to zero
     if 0 < value < 3:
         return 1
-    return int(max(0, min(100, ((value * 100.0) / 255.0))))
+    return int(max(0, min(100, int((value * 100.0) / 255.0))))
 
 
-def mode_val_to_hex(mode_val):
+def mode_val_to_hex(mode_val: int | str) -> str | None:
     """convert mode_val value that can be either xeh string or int to a hex string"""
     if isinstance(mode_val, int):
         return (hex(mode_val)[2:]).upper()
@@ -114,7 +121,7 @@ def mode_val_to_hex(mode_val):
     return None
 
 
-def mode_val_to_int(mode_val):
+def mode_val_to_int(mode_val: int | str) -> int | None:
     """convert mode_val value that can be either hex string or int to int"""
     if isinstance(mode_val, str):
         return int(mode_val, 16)
@@ -123,7 +130,7 @@ def mode_val_to_int(mode_val):
     return None
 
 
-def modeval_upd(old, new):
+def modeval_upd(old: int | str, new: int | str) -> int | str | None:
     """Update mode_val contextually. Convert to type of the old value and update"""
     if isinstance(old, int):
         if isinstance(new, int):
@@ -139,19 +146,29 @@ def modeval_upd(old, new):
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+async def async_setup_platform(
+        hass: HomeAssistant,
+        config: ConfigType,
+        async_add_entities: AddEntitiesCallback,
+        discovery_info: DiscoveryInfoType | None = None) -> None:
     """setup via configuration.yaml not supported anymore"""
 
 
 # noinspection PyUnusedLocal
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        async_add_entities: AddEntitiesCallback) -> None:
     """Set up an Exta Life light based on existing config."""
 
-    core = Core.get(config_entry.entry_id)
-    channels = core.get_channels(DOMAIN_LIGHT)
+    core: Core = Core.get(config_entry.entry_id)
+    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_LIGHT)
 
     _LOGGER.debug("Discovery: %s", pformat(channels))
-    async_add_entities([ExtaLifeLight(device, config_entry) for device in channels])
+    if channels:
+        async_add_entities(
+            [ExtaLifeLight(channel_data, config_entry) for channel_data in channels]
+        )
 
     core.pop_channels(DOMAIN_LIGHT)
 
@@ -159,19 +176,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 class ExtaLifeLight(ExtaLifeChannel, LightEntity):
     """Representation of an ExtaLife light controlling device."""
 
-    def __init__(self, channel_data, config_entry):
+    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
         super().__init__(channel_data, config_entry)
 
         self._supported_features: LightEntityFeature = LightEntityFeature(0)
         self._effect_list = None
-        self.channel_data = channel_data.get("data")
-        self._assumed_on = False
 
-        dev_type = self.channel_data.get("type")
-
-        self._supports_color = dev_type in SUPPORT_COLOR
-        self._supports_white_v = dev_type in SUPPORT_WHITE
-        self._supports_brightness = dev_type in SUPPORT_BRIGHTNESS
+        self._supports_color = self.device_type in SUPPORT_COLOR
+        self._supports_white_v = self.device_type in SUPPORT_WHITE
+        self._supports_brightness = self.device_type in SUPPORT_BRIGHTNESS
 
         # set light capabilities (properties)
         if self._supports_color and self._supports_white_v:
@@ -187,17 +200,17 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
             self._attr_supported_color_modes = {ColorMode.ONOFF}
             self._attr_color_mode = ColorMode.ONOFF
 
-        if dev_type in SUPPORT_EFFECT:
+        if self.device_type in SUPPORT_EFFECT:
             self._supported_features |= LightEntityFeature.EFFECT
             self._effect_list = EFFECT_LIST_SLR
 
-        _LOGGER.debug("Light type: %s", dev_type)
+        _LOGGER.debug("Light type: %s", repr(self.device_type))
 
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_LIGHT_SENSOR, channel_data)
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the switch."""
-        data = self.channel_data
+        data: dict[str, Any] = self.channel_data
         params = dict()
         rgb = None
         if self._supports_brightness:
@@ -271,7 +284,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
                 self._assumed_on = True
                 self.schedule_update_ha_state()
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the switch."""
         data = self.channel_data
         params = dict()
@@ -297,7 +310,8 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
                 self.schedule_update_ha_state()
 
     @property
-    def effect(self):
+    def effect(self) -> str | None:
+        """Return the current effect."""
         mode = self.channel_data.get("mode")
         if mode is None or mode != 2:
             return None
@@ -307,25 +321,27 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
         return MAP_MODE_VAL_EFFECT[mode_val_to_int(mode_val)]
 
     @property
-    def effect_list(self):
+    def effect_list(self) -> list[str] | None:
+        """Return the list of supported effects."""
         return self._effect_list
 
     @property
-    def brightness(self):
-        """Device brightness"""
+    def brightness(self) -> int | None:
+        """Return the brightness of this light between 0..255."""
         data = self.channel_data
         # brightness is only supported for native Exta Life light-controlling devices
-        if data.get("type") in DEVICE_ARR_ALL_LIGHT:
+        if self.device_type in DEVICE_ARR_ALL_LIGHT:
             return scale_to_255(data.get("value"))
 
     @property
     def supported_features(self) -> LightEntityFeature:
-        _LOGGER.debug("Supported flags: %s", self._supported_features)
+        """Flag supported features."""
+        # _LOGGER.debug("Supported flags: %s", self._supported_features)
         return self._supported_features
 
     @property
-    def hs_color(self):
-        """Device colour setting"""
+    def hs_color(self) -> tuple[float, float] | None:
+        """Return the hue and saturation color value [float, float]."""
         rgbw = mode_val_to_int(self.channel_data.get("mode_val"))
         rgb = rgbw >> 8
         r = rgb >> 16
@@ -336,7 +352,8 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
         return hs
 
     @property
-    def rgbw_color(self):
+    def rgbw_color(self) -> tuple[int, int, int, int] | None:
+        """Return the rgbw color value [int, int, int, int]."""
         rgbw = mode_val_to_int(self.channel_data.get("mode_val"))
         rgb = rgbw >> 8
         r = rgb >> 16
@@ -346,8 +363,8 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
         return r, g, b, w
 
     @property
-    def is_on(self):
-        """Return true if switch is on."""
+    def is_on(self) -> bool | None:
+        """Return True if entity is on."""
         if self.is_exta_free:
             return self._assumed_on
 
@@ -359,8 +376,9 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
             return True
         return False
 
-    def on_state_notification(self, data):
+    def on_state_notification(self, data: dict[str, Any]) -> None:
         """React on state notification from controller"""
+        super().on_state_notification(data)
         state = data.get("state")
         ch_data = self.channel_data.copy()
 

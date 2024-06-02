@@ -28,7 +28,70 @@ PRODUCT_SERIES_EXTA_FREE = "Exta Free"
 PRODUCT_CONTROLLER_MODEL = "EFC-01"
 
 
-class ExtaLifeDeviceModel:
+class ExtaLifeDeviceModelName(StrEnum):
+    # Exta Life
+    RNK22 = "RNK-22"
+    RNK22_TEMP_SENSOR = "RNK-22 temperature sensor"
+    RNK24 = "RNK-24"
+    RNK24_TEMP_SENSOR = "RNK-24 temperature sensor"
+    P4572 = "P-457/2"
+    P4574 = "P-457/4"
+    P4578 = "P-457/8"
+    P45736 = "P457/36"
+    LEDIX_P260 = "ledix touch control P260"
+    ROP21 = "ROP-21"
+    ROP22 = "ROP-22"
+    SRP22 = "SRP-22"
+    RDP21 = "RDP-21"
+    GKN01 = "GKN-01"
+    ROP27 = "ROP-27"
+    RGT01 = "RGT-01"
+    RNM24 = "RNM-24"
+    RNP21 = "RNP-21"
+    RNP22 = "RNP-22"
+    RCT21 = "RCT-21"
+    RCT22 = "RCT-22"
+    ROG21 = "ROG-21"
+    ROM22 = "ROM-22"
+    ROM24 = "ROM-24"
+    SRM22 = "SRM-22"
+    SLR21 = "SLR-21"
+    SLR22 = "SLR-22"
+    SLN21 = "SLN-21"
+    SLN22 = "SLN-22"
+    RCM21 = "RCM-21"
+    MEM21 = "MEM-21"
+    RCR21 = "RCR-21"
+    RCZ21 = "RCZ-21"
+    RCW21 = "RCW-21"
+    SLM21 = "SLM-21"
+    SLM22 = "SLM-22"
+    RCK21 = "RCK-21"
+    ROB21 = "ROB-21"
+    REP21 = "REP-21"
+    P501 = "P-501"
+    P520 = "P-520"
+    P521L = "P-521L"
+    BULIK_DRS985 = "bulik DRS-985"
+
+# Exta Free
+    ROP01 = "ROP-01"
+    ROP02 = "ROP-02"
+    ROM01 = "ROM-01"
+    ROM10 = "ROM-10"
+    ROP05 = "ROP-05"
+    ROP06 = "ROP-06"
+    ROP07 = "ROP-07"
+    RWG01 = "RWG-01"
+    ROB01 = "ROB-01"
+    SRP02 = "SRP-02"
+    RDP01 = "RDP-01"
+    RDP02 = "RDP-02"
+    RDP11 = "RDP-11"
+    SRP03 = "SRP-03"
+
+
+class ExtaLifeDeviceModel(IntEnum):
     RNK22 = 1
     RNK22_TEMP_SENSOR = 2
     RNK24 = 3
@@ -87,130 +150,88 @@ class ExtaLifeDeviceModel:
     SRP03 = 339
 
 
-# Exta Life
-MODEL_RNK22 = "RNK-22"
-MODEL_RNK22_TEMP_SENSOR = "RNK-22 temperature sensor"
-MODEL_RNK24 = "RNK-24"
-MODEL_RNK24_TEMP_SENSOR = "RNK-24 temperature sensor"
-MODEL_P4572 = "P-457/2"
-MODEL_P4574 = "P-457/4"
-MODEL_P4578 = "P-457/8"
-MODEL_P45736 = "P457/36"
-MODEL_LEDIX_P260 = "ledix touch control P260"
-MODEL_ROP21 = "ROP-21"
-MODEL_ROP22 = "ROP-22"
-MODEL_SRP22 = "SRP-22"
-MODEL_RDP21 = "RDP-21"
-MODEL_GKN01 = "GKN-01"
-MODEL_ROP27 = "ROP-27"
-MODEL_RGT01 = "RGT-01"
-MODEL_RNM24 = "RNM-24"
-MODEL_RNP21 = "RNP-21"
-MODEL_RNP22 = "RNP-22"
-MODEL_RCT21 = "RCT-21"
-MODEL_RCT22 = "RCT-22"
-MODEL_ROG21 = "ROG-21"
-MODEL_ROM22 = "ROM-22"
-MODEL_ROM24 = "ROM-24"
-MODEL_SRM22 = "SRM-22"
-MODEL_SLR21 = "SLR-21"
-MODEL_SLR22 = "SLR-22"
-MODEL_SLN21 = "SLN-21"
-MODEL_SLN22 = "SLN-22"
-MODEL_RCM21 = "RCM-21"
-MODEL_MEM21 = "MEM-21"
-MODEL_RCR21 = "RCR-21"
-MODEL_RCZ21 = "RCZ-21"
-MODEL_RCW21 = "RCW-21"
-MODEL_SLM21 = "SLM-21"
-MODEL_SLM22 = "SLM-22"
-MODEL_RCK21 = "RCK-21"
-MODEL_ROB21 = "ROB-21"
-MODEL_REP21 = "REP-21"
-MODEL_P501 = "P-501"
-MODEL_P520 = "P-520"
-MODEL_P521L = "P-521L"
-MODEL_BULIK_DRS985 = "bulik DRS-985"
+class ExtaLifeDeviceInfo:
 
-# Exta Free
-MODEL_ROP01 = "ROP-01"
-MODEL_ROP02 = "ROP-02"
-MODEL_ROM01 = "ROM-01"
-MODEL_ROM10 = "ROM-10"
-MODEL_ROP05 = "ROP-05"
-MODEL_ROP06 = "ROP-06"
-MODEL_ROP07 = "ROP-07"
-MODEL_RWG01 = "RWG-01"
-MODEL_ROB01 = "ROB-01"
-MODEL_SRP02 = "SRP-02"
-MODEL_RDP01 = "RDP-01"
-MODEL_RDP02 = "RDP-02"
-MODEL_RDP11 = "RDP-11"
-MODEL_SRP03 = "SRP-03"
+    # device types string mapping
+    __model_to_name_map: dict[ExtaLifeDeviceModel, ExtaLifeDeviceModelName] = {
+        ExtaLifeDeviceModel.RNK22: ExtaLifeDeviceModelName.RNK22,
+        ExtaLifeDeviceModel.RNK22_TEMP_SENSOR: ExtaLifeDeviceModelName.RNK22_TEMP_SENSOR,
+        ExtaLifeDeviceModel.RNK24: ExtaLifeDeviceModelName.RNK24,
+        ExtaLifeDeviceModel.RNK24_TEMP_SENSOR: ExtaLifeDeviceModelName.RNK24_TEMP_SENSOR,
+        ExtaLifeDeviceModel.P4572: ExtaLifeDeviceModelName.P4572,
+        ExtaLifeDeviceModel.P4574: ExtaLifeDeviceModelName.P4574,
+        ExtaLifeDeviceModel.P4578: ExtaLifeDeviceModelName.P4578,
+        ExtaLifeDeviceModel.P45736: ExtaLifeDeviceModelName.P45736,
+        ExtaLifeDeviceModel.LEDIX_P260: ExtaLifeDeviceModelName.LEDIX_P260,
+        ExtaLifeDeviceModel.ROP21: ExtaLifeDeviceModelName.ROP21,
+        ExtaLifeDeviceModel.ROP22: ExtaLifeDeviceModelName.ROP22,
+        ExtaLifeDeviceModel.SRP22: ExtaLifeDeviceModelName.SRP22,
+        ExtaLifeDeviceModel.RDP21: ExtaLifeDeviceModelName.RDP21,
+        ExtaLifeDeviceModel.GKN01: ExtaLifeDeviceModelName.GKN01,
+        ExtaLifeDeviceModel.ROP27: ExtaLifeDeviceModelName.ROP27,
+        ExtaLifeDeviceModel.RGT01: ExtaLifeDeviceModelName.RGT01,
+        ExtaLifeDeviceModel.RNM24: ExtaLifeDeviceModelName.RNM24,
+        ExtaLifeDeviceModel.RNP21: ExtaLifeDeviceModelName.RNP21,
+        ExtaLifeDeviceModel.RNP22: ExtaLifeDeviceModelName.RNP22,
+        ExtaLifeDeviceModel.RCT21: ExtaLifeDeviceModelName.RCT21,
+        ExtaLifeDeviceModel.RCT22: ExtaLifeDeviceModelName.RCT22,
+        ExtaLifeDeviceModel.ROG21: ExtaLifeDeviceModelName.ROG21,
+        ExtaLifeDeviceModel.ROM22: ExtaLifeDeviceModelName.ROM22,
+        ExtaLifeDeviceModel.ROM24: ExtaLifeDeviceModelName.ROM24,
+        ExtaLifeDeviceModel.SRM22: ExtaLifeDeviceModelName.SRM22,
+        ExtaLifeDeviceModel.SLR21: ExtaLifeDeviceModelName.SLR21,
+        ExtaLifeDeviceModel.SLR22: ExtaLifeDeviceModelName.SLR22,
+        ExtaLifeDeviceModel.RCM21: ExtaLifeDeviceModelName.RCM21,
+        ExtaLifeDeviceModel.MEM21: ExtaLifeDeviceModelName.MEM21,
+        ExtaLifeDeviceModel.RCR21: ExtaLifeDeviceModelName.RCR21,
+        ExtaLifeDeviceModel.RCZ21: ExtaLifeDeviceModelName.RCZ21,
+        ExtaLifeDeviceModel.SLN21: ExtaLifeDeviceModelName.SLN21,
+        ExtaLifeDeviceModel.SLN22: ExtaLifeDeviceModelName.SLN22,
+        ExtaLifeDeviceModel.RCK21: ExtaLifeDeviceModelName.RCK21,
+        ExtaLifeDeviceModel.ROB21: ExtaLifeDeviceModelName.ROB21,
+        ExtaLifeDeviceModel.P501: ExtaLifeDeviceModelName.P501,
+        ExtaLifeDeviceModel.P520: ExtaLifeDeviceModelName.P520,
+        ExtaLifeDeviceModel.P521L: ExtaLifeDeviceModelName.P521L,
+        ExtaLifeDeviceModel.RCW21: ExtaLifeDeviceModelName.RCW21,
+        ExtaLifeDeviceModel.REP21: ExtaLifeDeviceModelName.REP21,
+        ExtaLifeDeviceModel.BULIK_DRS985: ExtaLifeDeviceModelName.BULIK_DRS985,
 
-# device types string mapping
-DEVICE_MAP_TYPE_TO_MODEL = {
-    ExtaLifeDeviceModel.RNK22: MODEL_RNK22,
-    ExtaLifeDeviceModel.RNK22_TEMP_SENSOR: MODEL_RNK22_TEMP_SENSOR,
-    ExtaLifeDeviceModel.RNK24: MODEL_RNK24,
-    ExtaLifeDeviceModel.RNK24_TEMP_SENSOR: MODEL_RNK24_TEMP_SENSOR,
-    ExtaLifeDeviceModel.P4572: MODEL_P4572,
-    ExtaLifeDeviceModel.P4574: MODEL_P4574,
-    ExtaLifeDeviceModel.P4578: MODEL_P4578,
-    ExtaLifeDeviceModel.P45736: MODEL_P45736,
-    ExtaLifeDeviceModel.LEDIX_P260: MODEL_LEDIX_P260,
-    ExtaLifeDeviceModel.ROP21: MODEL_ROP21,
-    ExtaLifeDeviceModel.ROP22: MODEL_ROP22,
-    ExtaLifeDeviceModel.SRP22: MODEL_SRP22,
-    ExtaLifeDeviceModel.RDP21: MODEL_RDP21,
-    ExtaLifeDeviceModel.GKN01: MODEL_GKN01,
-    ExtaLifeDeviceModel.ROP27: MODEL_ROP27,
-    ExtaLifeDeviceModel.RGT01: MODEL_RGT01,
-    ExtaLifeDeviceModel.RNM24: MODEL_RNM24,
-    ExtaLifeDeviceModel.RNP21: MODEL_RNP21,
-    ExtaLifeDeviceModel.RNP22: MODEL_RNP22,
-    ExtaLifeDeviceModel.RCT21: MODEL_RCT21,
-    ExtaLifeDeviceModel.RCT22: MODEL_RCT22,
-    ExtaLifeDeviceModel.ROG21: MODEL_ROG21,
-    ExtaLifeDeviceModel.ROM22: MODEL_ROM22,
-    ExtaLifeDeviceModel.ROM24: MODEL_ROM24,
-    ExtaLifeDeviceModel.SRM22: MODEL_SRM22,
-    ExtaLifeDeviceModel.SLR21: MODEL_SLR21,
-    ExtaLifeDeviceModel.SLR22: MODEL_SLR22,
-    ExtaLifeDeviceModel.RCM21: MODEL_RCM21,
-    ExtaLifeDeviceModel.MEM21: MODEL_MEM21,
-    ExtaLifeDeviceModel.RCR21: MODEL_RCR21,
-    ExtaLifeDeviceModel.RCZ21: MODEL_RCZ21,
-    ExtaLifeDeviceModel.SLN21: MODEL_SLN21,
-    ExtaLifeDeviceModel.SLN22: MODEL_SLN22,
-    ExtaLifeDeviceModel.RCK21: MODEL_RCK21,
-    ExtaLifeDeviceModel.ROB21: MODEL_ROB21,
-    ExtaLifeDeviceModel.P501: MODEL_P501,
-    ExtaLifeDeviceModel.P520: MODEL_P520,
-    ExtaLifeDeviceModel.P521L: MODEL_P521L,
-    ExtaLifeDeviceModel.RCW21: MODEL_RCW21,
-    ExtaLifeDeviceModel.REP21: MODEL_REP21,
-    ExtaLifeDeviceModel.BULIK_DRS985: MODEL_BULIK_DRS985,
+        # Exta Free
+        ExtaLifeDeviceModel.ROP01: ExtaLifeDeviceModelName.ROP01,
+        ExtaLifeDeviceModel.ROP02: ExtaLifeDeviceModelName.ROP02,
+        ExtaLifeDeviceModel.ROM01: ExtaLifeDeviceModelName.ROM01,
+        ExtaLifeDeviceModel.ROM10: ExtaLifeDeviceModelName.ROM10,
+        ExtaLifeDeviceModel.ROP05: ExtaLifeDeviceModelName.ROP05,
+        ExtaLifeDeviceModel.ROP06: ExtaLifeDeviceModelName.ROP06,
+        ExtaLifeDeviceModel.ROP07: ExtaLifeDeviceModelName.ROP07,
+        ExtaLifeDeviceModel.RWG01: ExtaLifeDeviceModelName.RWG01,
+        ExtaLifeDeviceModel.ROB01: ExtaLifeDeviceModelName.ROB01,
+        ExtaLifeDeviceModel.SRP02: ExtaLifeDeviceModelName.SRP02,
+        ExtaLifeDeviceModel.RDP01: ExtaLifeDeviceModelName.RDP01,
+        ExtaLifeDeviceModel.RDP02: ExtaLifeDeviceModelName.RDP02,
+        ExtaLifeDeviceModel.RDP11: ExtaLifeDeviceModelName.RDP11,
+        ExtaLifeDeviceModel.SRP03: ExtaLifeDeviceModelName.SRP03
+    }
 
-    # Exta Free
-    ExtaLifeDeviceModel.ROP01: MODEL_ROP01,
-    ExtaLifeDeviceModel.ROP02: MODEL_ROP02,
-    ExtaLifeDeviceModel.ROM01: MODEL_ROM01,
-    ExtaLifeDeviceModel.ROM10: MODEL_ROM10,
-    ExtaLifeDeviceModel.ROP05: MODEL_ROP05,
-    ExtaLifeDeviceModel.ROP06: MODEL_ROP06,
-    ExtaLifeDeviceModel.ROP07: MODEL_ROP07,
-    ExtaLifeDeviceModel.RWG01: MODEL_RWG01,
-    ExtaLifeDeviceModel.ROB01: MODEL_ROB01,
-    ExtaLifeDeviceModel.SRP02: MODEL_SRP02,
-    ExtaLifeDeviceModel.RDP01: MODEL_RDP01,
-    ExtaLifeDeviceModel.RDP02: MODEL_RDP02,
-    ExtaLifeDeviceModel.RDP11: MODEL_RDP11,
-    ExtaLifeDeviceModel.SRP03: MODEL_SRP03
-}
+    __name_to_model_map: dict[ExtaLifeDeviceModelName, ExtaLifeDeviceModel] = {
+        v: k for k, v in __model_to_name_map.items()
+    }
 
-# reverse lookup
-MODEL_MAP_MODEL_TO_TYPE = {v: k for k, v in DEVICE_MAP_TYPE_TO_MODEL.items()}
+    @classmethod
+    def get_model_name(cls, device_type: ExtaLifeDeviceModel) -> ExtaLifeDeviceModelName:
+
+        if device_type in cls.__model_to_name_map:
+            return cls.__model_to_name_map.get(device_type)
+
+        return ExtaLifeDeviceModelName(f"unknown device model ({device_type})")
+
+    @classmethod
+    def get_device_type(cls, model_name: ExtaLifeDeviceModelName) -> ExtaLifeDeviceModel:
+
+        if model_name in cls.__name_to_model_map:
+            return cls.__name_to_model_map.get(model_name)
+
+        return ExtaLifeDeviceModel(0)
 
 
 # Exta Life devices

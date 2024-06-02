@@ -1,15 +1,23 @@
 """Support for Exta Life roller shutters: SRP, SRM, ROB(future)"""
 import logging
 from pprint import pformat
+from typing import (
+    Any,
+)
 
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.components.cover import (
     CoverDeviceClass,
     CoverEntity,
     CoverEntityFeature,
     ATTR_POSITION,
     DOMAIN as DOMAIN_COVER,
+)
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import (
+    ConfigType,
+    DiscoveryInfoType,
 )
 
 from . import ExtaLifeChannel
@@ -20,8 +28,7 @@ from .helpers.const import (
 from .helpers.core import Core
 from .pyextalife import (
     ExtaLifeAPI,
-    MODEL_ROB01,
-    DEVICE_MAP_TYPE_TO_MODEL,
+    ExtaLifeDeviceModel,
     DEVICE_ARR_COVER,
     DEVICE_ARR_SENS_GATE_CONTROLLER
 )
@@ -35,26 +42,37 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+async def async_setup_platform(
+        hass: HomeAssistant,
+        config: ConfigType,
+        async_add_entities: AddEntitiesCallback,
+        discovery_info: DiscoveryInfoType | None = None) -> None:
     """setup via configuration.yaml not supported anymore"""
 
 
 # noinspection PyUnusedLocal
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        async_add_entities: AddEntitiesCallback) -> None:
     """Set up Exta Life covers based on existing config."""
 
-    core = Core.get(config_entry.entry_id)
-    channels = core.get_channels(DOMAIN_COVER)
+    core: Core = Core.get(config_entry.entry_id)
+    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_COVER)
 
     _LOGGER.debug("Discovery: %s", pformat(channels))
-    async_add_entities([ExtaLifeCover(device, config_entry) for device in channels])
+    if channels:
+        async_add_entities(
+            [ExtaLifeCover(channel_data, config_entry) for channel_data in channels]
+        )
 
     core.pop_channels(DOMAIN_COVER)
 
 
 class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
     """Representation of ExtaLife Cover"""
-    def __init__(self, channel_data, config_entry: ConfigEntry):
+
+    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
         super().__init__(channel_data, config_entry)
 
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_COVER_SENSOR, channel_data)
@@ -64,10 +82,10 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
     POS_OPEN = 0
 
     @property
-    def device_class(self):
-        dev_type = self.channel_data.get("type")
+    def device_class(self) -> CoverDeviceClass:
+        """Return the class of this device, from component DEVICE_CLASSES."""
         chn_type = self.channel_data.get("channel_type")
-        if dev_type in DEVICE_ARR_COVER:
+        if self.device_type in DEVICE_ARR_COVER:
             return CoverDeviceClass.SHUTTER
         elif chn_type == GATE_CHN_TYPE_WICKET:
             return CoverDeviceClass.DOOR
@@ -75,7 +93,8 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
             return CoverDeviceClass.GATE
 
     @property
-    def supported_features(self):
+    def supported_features(self) -> CoverEntityFeature | int | None:
+        """Flag supported features."""
         dev_type = self.channel_data.get("type")
         if not self.is_exta_free:
             if dev_type in DEVICE_ARR_COVER:
@@ -89,7 +108,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
             return CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
 
     @property
-    def current_cover_position(self):
+    def current_cover_position(self) -> int | None:
         """Return current position of cover. 0 is closed, 100 is open."""
         # HA GUI buttons meaning:
         # ARROW UP   - open cover
@@ -106,7 +125,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
         _LOGGER.debug("current_cover_position for cover: %s. Model: %s, returned to HA: %s", self.entity_id, val, pos)
         return pos
 
-    async def async_set_cover_position(self, **kwargs):
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Move the cover to a specific position."""
         data = self.channel_data
         pos = int(kwargs.get(ATTR_POSITION))
@@ -118,11 +137,12 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
             self.async_schedule_update_ha_state()
 
     @property
-    def is_inverted_control(self):
+    def is_inverted_control(self) -> bool:
+        """Wherever to use inverted logic of open/close for 0-100"""
         return self.config_entry.options.get(DOMAIN_COVER).get(OPTIONS_COVER_INVERTED_CONTROL, False)
 
     @property
-    def is_closed(self):
+    def is_closed(self) -> bool | None:
         """Return if the cover is closed (affects roller icon and entity status)."""
         position = self.channel_data.get("value")
         gate_state = self.channel_data.get("channel_state")
@@ -139,7 +159,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
             return gate_state == 3
         return None
 
-    async def async_open_cover(self, **kwargs):
+    async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover."""
         data = self.channel_data
         # ROB-21 to open 'pos' must be different from 0
@@ -163,7 +183,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
                     await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_UP_RELEASE)):
                 self.async_schedule_update_ha_state()
 
-    async def async_close_cover(self, **kwargs):
+    async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover."""
         data = self.channel_data
         pos = ExtaLifeCover.POS_CLOSED
@@ -177,18 +197,20 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
                 _LOGGER.debug("close_cover for cover: %s. model: %s", self.entity_id, pos)
                 self.async_schedule_update_ha_state()
 
-        elif DEVICE_MAP_TYPE_TO_MODEL.get(self.channel_data.get("type")) != MODEL_ROB01:
+        elif ExtaLifeDeviceModel(self.channel_data.get("type")) != ExtaLifeDeviceModel.ROB01:
             # ROB-01 supports only 1 toggle mode using 1 command
             if (await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_DOWN_PRESS) and
                     await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_DOWN_RELEASE)):
                 self.async_schedule_update_ha_state()
 
-    async def async_stop_cover(self, **kwargs):
+    async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the cover."""
         await self.async_action(ExtaLifeAPI.ACTION_STOP)
 
-    def on_state_notification(self, data):
+    def on_state_notification(self, data: dict[str, Any]) -> None:
         """ React on state notification from controller """
+        super().on_state_notification(data)
+
         ch_data = self.channel_data.copy()
         if ch_data.get("value") is not None:
             ch_data["value"] = data.get("value")

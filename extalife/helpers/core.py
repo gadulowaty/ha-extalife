@@ -97,7 +97,7 @@ class Core:
         self._inst[config_entry.entry_id] = self
 
         self._config_entry: ConfigEntry = config_entry
-        self._dev_manager = DeviceManager(config_entry, self)
+        self._device_manager: DeviceManager = DeviceManager(config_entry, self)
         self._transmitter_manager = TransmitterManager(config_entry)
         self._api = ExtaLifeAPI(
             self.hass.loop,
@@ -106,8 +106,8 @@ class Core:
         )
         self._signal_callbacks = []
         self._track_time_callbacks = []
-        self._platforms = dict()
-        self._platforms_cust = dict()
+        self._platforms: dict[str, list[dict[str, Any]]] = {}
+        self._platforms_cust: dict[str, list[dict[str, Any]]] = {}
         self._data_manager: ChannelDataManager = ChannelDataManager(self.hass, self.config_entry)
         self._api.set_notification_callback(self._on_status_notification_callback)
         self._queue = asyncio.Queue()
@@ -281,8 +281,8 @@ class Core:
         return Core._hass
 
     @property
-    def dev_manager(self) -> DeviceManagerType:
-        return self._dev_manager
+    def device_manager(self) -> DeviceManagerType:
+        return self._device_manager
 
     @property
     def signal_remove_callbacks(self):
@@ -302,26 +302,29 @@ class Core:
 
         self._track_time_callbacks = list()
 
-    def push_channels(self, platform: str, data: list, custom=False, append=False):
+    def push_channels(self, platform: str, channels_data: list[dict[str, Any]], custom=False, append=False):
         """Store channel data temporarily for platform setup
 
         custom - custom, virtual platform"""
         if custom:
             if append:
                 self._platforms_cust.setdefault(platform, [])
-                self._platforms_cust[platform].append(data)
+                for channel_data in channels_data:
+                    self._platforms_cust[platform].append(channel_data)
             else:
-                self._platforms_cust[platform] = data
+                self._platforms_cust[platform] = channels_data
         else:
             if append:
                 self._platforms.setdefault(platform, [])
-                self._platforms[platform].append(data)
+                for channel_data in channels_data:
+                    self._platforms[platform].append(channel_data)
             else:
-                self._platforms[platform] = data
+                self._platforms[platform] = channels_data
 
-    def get_channels(self, platform: str) -> list:
+    def get_channels(self, platform: str) -> list[dict[str, Any]]:
         """Return list of channel data per platform"""
-        channels = self._platforms.get(platform)
+
+        channels: list[dict[str, Any]] = self._platforms.get(platform)
         if channels is None:
             channels = self._platforms_cust.get(platform)
         return channels

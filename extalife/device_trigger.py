@@ -43,7 +43,7 @@ async def async_get_triggers(hass: HomeAssistant, device_id: str) -> List[dict] 
         if core:
             break
 
-    int_device = await core.dev_manager.async_get_by_registry_id(device.id)
+    int_device = await core.device_manager.async_get_by_registry_id(device.id)
     if int_device is None:
         return
 
@@ -84,7 +84,7 @@ async def async_attach_trigger(
         if core:
             break
 
-    int_device = await core.dev_manager.async_get_by_registry_id(device.id)
+    int_device = await core.device_manager.async_get_by_registry_id(device.id)
     _LOGGER.debug('int_device: %s', int_device)
     if int_device is None:
         return
