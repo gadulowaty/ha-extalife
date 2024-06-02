@@ -769,19 +769,17 @@ class ExtaLifeChannel(Entity):
         )
         return es_attr
 
-    # TODO: [typing] Need more specific list
     @property
-    def virtual_sensors(self) -> list:
+    def virtual_sensors(self) -> list[dict[str, Any]]:
         """Return channel attributes which will serve as the basis for virtual sensors.
         Platforms should implement this property and return additional sensors if needed"""
         return []
 
-    # TODO: [typing] Need more specific list
-    def _get_virtual_sensors(self) -> list:
+    def _get_virtual_sensors(self) -> list[dict[str, Any]]:
         """By default, check all entity attributes and return virtual sensor config"""
         from .sensor import MAP_EXTA_ATTRIBUTE_TO_DEV_CLASS
 
-        attr = []
+        attr: list[dict[str, Any]] = []
         for k, v in self.channel_data.items():                      # pylint: disable=unused-variable
             dev_class = MAP_EXTA_ATTRIBUTE_TO_DEV_CLASS.get(k)
             if dev_class:

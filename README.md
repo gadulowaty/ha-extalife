@@ -14,7 +14,14 @@ ZAMEL Exta Life integration with Home Assistant based on custom component.
 * Smart sockets: ROG-21
 * Roller blind controllers: SRP-22, SRM-22
 * Heating controller: RGT-01, GKN-01
-* Sensors: RCT-21, RCT-22, RNK-21&RNK-22 built-in temperature sensor, flood sensor RCZ-21, motion sensor RCR-21, window sensor RCK-21, multi-sensor RCM-21, 3-phase energy meter MEM-21
+* Sensors: 
+  * Temperature sensors: RCT-21, RCT-22, RNK-21&RNK-22 built-in
+  * Flood sensor: RCZ-21
+  * Motion sensor: RCR-21
+  * Window sensor: RCK-21
+  * Multi-sensor: RCM-21 (temp, humidity, presure and illuminance)
+  * 3-phase energy meter: MEM-21
+  * Wind speed meter: RCW-21
 
 ### Exta Free supported devices (via EFC-01 controller):
 * Switches: ROP-01, ROP-02, ROP-05, ROP-06, ROP-07, ROM-01, ROM-10

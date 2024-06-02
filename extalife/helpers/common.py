@@ -58,7 +58,6 @@ class PseudoPlatform:
             "manufacturer": PRODUCT_MANUFACTURER,
             "model": model_name,
             "hw_version": None,
-            "sw_version": "Ver1.0-beta5",
             "serial_number": f"{serial_no:06X}",
             "via_device": (DOMAIN, self.controller.mac),
         }
