@@ -1,9 +1,17 @@
 """Support for Exta Life sensor devices"""
 from dataclasses import dataclass
-import logging
-from pprint import pformat
-
+from datetime import (
+    date,
+    datetime,
+)
+from decimal import Decimal
 from enum import StrEnum
+import logging
+from typing import (
+    Any,
+    Mapping,
+)
+from pprint import pformat
 
 from homeassistant.components.sensor import (
     DOMAIN as DOMAIN_SENSOR,
@@ -13,7 +21,6 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfTemperature,
@@ -30,7 +37,12 @@ from homeassistant.const import (
     LIGHT_LUX,
 )
 from homeassistant.core import HomeAssistant
-
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import (
+    ConfigType,
+    DiscoveryInfoType,
+    StateType,
+)
 from . import ExtaLifeChannel
 from .helpers.core import Core
 from .helpers.const import (
@@ -73,7 +85,8 @@ class SensorEntityConfig:
 
         self.native_unit_of_measurement = descr.native_unit_of_measurement
         self.device_class = descr.device_class
-        self.state_class = descr.state_class
+        self.state_class: SensorStateClass | str | None = descr.state_class
+        self.suggested_display_precision: int | None = descr.suggested_display_precision
 
 
 class ExtaSensorDeviceClass(StrEnum):
@@ -216,12 +229,14 @@ SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
         native_unit_of_measurement=UnitOfPressure.HPA,
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
         factor=1,
     ),
     SensorDeviceClass.ILLUMINANCE: ELSensorEntityDescription(
         native_unit_of_measurement=LIGHT_LUX,
         device_class=SensorDeviceClass.ILLUMINANCE,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
         factor=1,
     ),
     SensorDeviceClass.HUMIDITY: ELSensorEntityDescription(
@@ -234,6 +249,7 @@ SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
         factor=100,
     ),
     SensorDeviceClass.TEMPERATURE: ELSensorEntityDescription(
@@ -246,23 +262,28 @@ SENSOR_TYPES: dict[str, ELSensorEntityDescription] = {
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+async def async_setup_platform(
+        hass: HomeAssistant,
+        config: ConfigType,
+        async_add_entities: AddEntitiesCallback,
+        discovery_info: DiscoveryInfoType | None = None) -> None:
     """setup via configuration.yaml not supported anymore"""
 
 
 # noinspection PyUnusedLocal
 async def async_setup_entry(
-    hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities
-):
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        async_add_entities: AddEntitiesCallback) -> None:
     """Set up Exta Life sensors based on existing config."""
 
-    core = Core.get(config_entry.entry_id)
-    channels = core.get_channels(DOMAIN_SENSOR)
+    core: Core = Core.get(config_entry.entry_id)
+    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_SENSOR)
 
     _LOGGER.debug("Discovery: %s", pformat(channels))
     if channels:
         async_add_entities(
-            [ExtaLifeSensor(device, config_entry) for device in channels]
+            [ExtaLifeSensor(channel_data, config_entry) for channel_data in channels]
         )
 
     core.pop_channels(DOMAIN_SENSOR)
@@ -273,10 +294,7 @@ async def async_setup_entry(
         _LOGGER.debug("Discovery (%s): %s", virtual_domain, pformat(channels))
         if channels:
             async_add_entities(
-                [
-                    ExtaLifeVirtualSensor(device, config_entry, virtual_domain)
-                    for device in channels
-                ]
+                [ExtaLifeVirtualSensor(channel_data, config_entry, virtual_domain) for channel_data in channels]
             )
 
         core.pop_channels(virtual_domain)
@@ -285,55 +303,60 @@ async def async_setup_entry(
 class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
     """Representation of Exta Life Sensors"""
 
-    def __init__(self, channel_data, config_entry):
+    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
         super().__init__(channel_data, config_entry)
 
-        # self.channel_data = channel_data.get("data")
         self._config: SensorEntityConfig | None = None
 
     @property
     def device_class(self) -> SensorDeviceClass:
+        """Return the class of this device, from component SENSOR_CLASSES."""
         return self._config.device_class
 
     @property
-    def native_unit_of_measurement(self):
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the unit of measurement of the sensor, if any."""
         return self._config.native_unit_of_measurement
 
     @property
-    def state_class(self) -> SensorStateClass:
+    def state_class(self) -> SensorStateClass | str | None:
+        """Return the state class of this entity, if any."""
         return self._config.state_class
 
     @property
-    def native_value(self):
-        """Return state of the sensor"""
+    def native_value(self) -> StateType | date | datetime | Decimal:
+        """Return the value reported by the sensor."""
 
         value = self.get_value_from_attr_path(self._config.value_path)
 
         if value:
+            if isinstance(value, str) or isinstance(value, int):
+                value = float(value)
             value = value * self._config.factor
 
         return value
 
-    @staticmethod
-    def extra_state_attribute_update(src: dict, dst: dict, key: str):
-        if src.get(key) is not None:
-            dst.update({key: src.get(key)})
+    @property
+    def suggested_display_precision(self) -> int | None:
+        """Return the suggested number of decimal digits for display."""
+        if self._config.suggested_display_precision is None:
+            return super().suggested_display_precision
+        return self._config.suggested_display_precision
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return device specific state attributes."""
 
-        attrs = super().extra_state_attributes
+        es_attrs = self._mapping_to_dict(super().extra_state_attributes)
 
-        self.extra_state_attribute_update(self.channel_data, attrs, "sync_time")
-        self.extra_state_attribute_update(self.channel_data, attrs, "last_sync")
+        self._extra_state_attribute_update(self.channel_data, es_attrs, "sync_time")
+        self._extra_state_attribute_update(self.channel_data, es_attrs, "last_sync")
 
-        self.format_state_attr(attrs)
+        return self.format_state_attr(es_attrs)
 
-        return attrs
-
-    def on_state_notification(self, data):
+    def on_state_notification(self, data: dict[str, Any]) -> None:
         """React on state notification from controller"""
+        super().on_state_notification(data)
 
         self.channel_data.update(data)
 
@@ -371,23 +394,23 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
 class ExtaLifeSensor(ExtaLifeSensorBase):
     """Representation of Exta Life Sensors"""
 
-    def __init__(self, channel_data, config_entry):
+    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
         super().__init__(channel_data, config_entry)
 
-        data = self.channel_data
-        dev_type = data.get("type")
-        channel = data.get("channel")
+        ch_data: dict[str, Any] = self.channel_data
+        channel: int = ch_data.get("channel")
 
-        if dev_type in DEVICE_ARR_SENS_MULTI:
+        if self.device_type in DEVICE_ARR_SENS_MULTI:
             dev_class = MAP_EXTA_MULTI_CHN_TO_DEV_CLASS[channel]
         else:
-            dev_class = MAP_EXTA_DEV_TYPE_TO_DEV_CLASS[dev_type]
+            dev_class = MAP_EXTA_DEV_TYPE_TO_DEV_CLASS[self.device_type]
 
         self._config = SensorEntityConfig(SENSOR_TYPES[dev_class])
 
         # create virtual, attribute sensors
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_SENSOR, channel_data)
 
+    # TODO: [typing] Need more specific list
     @property
     def virtual_sensors(self) -> list:
         """List of config dicts"""
@@ -413,17 +436,19 @@ class ExtaLifeSensor(ExtaLifeSensorBase):
 class ExtaLifeVirtualSensor(ExtaLifeSensorBase):
     """Representation of Exta Life Sensors"""
 
-    def __init__(self, channel_data, config_entry, virtual_domain):
+    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry, virtual_domain):
         super().__init__(channel_data, config_entry)
 
         self._virtual_domain = virtual_domain
-        self._virtual_prop: dict = channel_data.get(VIRTUAL_SENSOR_CHN_FIELD)
+        self._virtual_prop: dict[str, Any] = channel_data.get(VIRTUAL_SENSOR_CHN_FIELD)
 
-        self._config = SensorEntityConfig(SENSOR_TYPES[self._virtual_prop.get(VIRTUAL_SENSOR_DEV_CLS)])
+        self._config: SensorEntityConfig = SensorEntityConfig(
+            SENSOR_TYPES[self._virtual_prop.get(VIRTUAL_SENSOR_DEV_CLS)]
+        )
 
         self.override_config_from_dict(self._virtual_prop)
 
-    def override_config_from_dict(self, override: dict):
+    def override_config_from_dict(self, override: dict[str, Any]) -> None:
         """Override sensor config from a dict"""
         for k, v in override.items():           # pylint: disable=unused-variable
             setattr(self._config, k, v)
@@ -436,7 +461,7 @@ class ExtaLifeVirtualSensor(ExtaLifeSensorBase):
         return f"{super_id}-{self._virtual_prop.get(VIRTUAL_SENSOR_PATH)}"
 
     @staticmethod
-    def get_name_suffix(path: str):
+    def get_name_suffix(path: str) -> str:
         """Derive name suffix for attribute (virtual) sensor entities
         Simply escape special characters with spaces"""
 

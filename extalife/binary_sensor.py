@@ -1,9 +1,23 @@
 """Support for Exta Life binary sensor devices e.g. leakage sensor, door/window open sensor"""
 import logging
 from pprint import pformat
-from homeassistant.components.binary_sensor import BinarySensorEntity, DOMAIN as DOMAIN_BINARY_SENSOR
-from homeassistant.core import HomeAssistant
+from typing import (
+    Any,
+    Mapping
+)
+
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+    DOMAIN as DOMAIN_BINARY_SENSOR
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import (
+    ConfigType,
+    DiscoveryInfoType,
+)
 
 from . import ExtaLifeChannel
 from .helpers.const import DOMAIN_VIRTUAL_BINARY_SENSOR_SENSOR
@@ -18,19 +32,29 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+async def async_setup_platform(
+        hass: HomeAssistant,
+        config_entry: ConfigType,
+        async_add_entities: AddEntitiesCallback,
+        discovery_info: DiscoveryInfoType | None = None) -> None:
     """"setup via configuration.yaml not supported anymore"""
 
 
 # noinspection PyUnusedLocal
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        async_add_entities: AddEntitiesCallback) -> None:
     """Set up Exta Life binary sensors based on existing config."""
 
-    core = Core.get(config_entry.entry_id)
-    channels = core.get_channels(DOMAIN_BINARY_SENSOR)
+    core: Core = Core.get(config_entry.entry_id)
+    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_BINARY_SENSOR)
 
     _LOGGER.debug("Discovery: %s", pformat(channels))
-    async_add_entities([ExtaLifeBinarySensor(device, config_entry) for device in channels])
+    if channels:
+        async_add_entities(
+            [ExtaLifeBinarySensor(channel_data, config_entry) for channel_data in channels]
+        )
 
     core.pop_channels(DOMAIN_BINARY_SENSOR)
 
@@ -38,38 +62,25 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
     """Representation of an ExtaLife binary sensors"""
 
-    def __init__(self, channel_data, config_entry):
+    def __init__(self, channel_data, config_entry: ConfigEntry):
         super().__init__(channel_data, config_entry)
-        self._dev_type = None
-        self._dev_class = None
-
-        dev_type = self.channel_data.get("type")
-        if dev_type in DEVICE_ARR_SENS_WATER:
-            self._dev_class = "moisture"
-
-        if dev_type in DEVICE_ARR_SENS_MOTION:
-            self._dev_class = "motion"
-
-        if dev_type in DEVICE_ARR_SENS_OPEN_CLOSE:
-            self._dev_class = "opening"
-
-        self._dev_type = dev_type
 
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_BINARY_SENSOR_SENSOR, channel_data)
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool | None:
         """Return state of the sensor"""
+
         # Exta Life detection sensors keep their boolean status in field value_3
         state = self.channel_data.get("value_3")
 
-        if self._dev_type in DEVICE_ARR_SENS_WATER:
+        if self.device_type in DEVICE_ARR_SENS_WATER:
             value = state
 
-        elif self._dev_type in DEVICE_ARR_SENS_MOTION:
+        elif self.device_type in DEVICE_ARR_SENS_MOTION:
             value = state
 
-        elif self._dev_type in DEVICE_ARR_SENS_OPEN_CLOSE:
+        elif self.device_type in DEVICE_ARR_SENS_OPEN_CLOSE:
             value = not state
         else:
             value = state
@@ -83,31 +94,41 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
         return value
 
     @property
-    def device_class(self):
-        return self._dev_class
+    def device_class(self) -> str | None:
+        """Return the class of this device, from component DEVICE_CLASSES."""
+        if self.device_type in DEVICE_ARR_SENS_WATER:
+            return BinarySensorDeviceClass.MOISTURE
+
+        if self.device_type in DEVICE_ARR_SENS_MOTION:
+            return BinarySensorDeviceClass.MOTION
+
+        if self.device_type in DEVICE_ARR_SENS_OPEN_CLOSE:
+            return BinarySensorDeviceClass.OPENING
+
+        return super().device_class
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return device specific state attributes."""
-        attr = super().extra_state_attributes
-        if attr is None:
-            attr = {}
-        data = self.channel_data
+        es_attr: dict[str, Any] = self._mapping_to_dict(super().extra_state_attributes)
+        ch_data: dict[str, Any] = self.channel_data
+
         # general sensor attributes
-        if data.get("sync_time") is not None:
-            attr.update({"sync_time": data.get("sync_time")})
-        if data.get("last_sync") is not None:
-            attr.update({"last_sync": data.get("last_sync")})
+        self._extra_state_attribute_update(ch_data, es_attr, "sync_time")
+        self._extra_state_attribute_update(ch_data, es_attr, "last_sync")
 
         # motion sensor attributes
-        if self._dev_class == "motion":
-            attr.update({"tamper": data.get("tamper")})
-            attr.update({"tamper_sync_time": data.get("tamper_sync_time")})
+        if self.device_class == BinarySensorDeviceClass.MOTION:
+            es_attr.update({"tamper": ch_data.get("tamper")})
+            es_attr.update({"tamper_sync_time": ch_data.get("tamper_sync_time")})
 
-        return attr
+        return es_attr
 
-    def on_state_notification(self, data):
+    def on_state_notification(self, data: dict[str, Any]) -> None:
         """ React on state notification from controller """
+
+        super().on_state_notification(data)
+
         state = data.get("state")
         ch_data = self.channel_data.copy()
 

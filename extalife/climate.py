@@ -1,15 +1,27 @@
 import logging
 from pprint import pformat
+from typing import (
+    Any,
+    Mapping,
+)
 
-# from homeassistant.components.extalife import ExtaLifeChannel
+from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, DOMAIN as DOMAIN_CLIMATE
+from homeassistant.components.climate import (
+    ClimateEntity,
+    ClimateEntityFeature,
+    DOMAIN as DOMAIN_CLIMATE,
+)
 from homeassistant.components.climate.const import (
     HVACAction,
     HVACMode,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import (
+    ConfigType,
+    DiscoveryInfoType,
+)
 
 from . import ExtaLifeChannel
 from .helpers.const import DOMAIN_VIRTUAL_CLIMATE_SENSOR
@@ -61,19 +73,29 @@ HA_MODE_ACTION = {
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+async def async_setup_platform(
+        hass: HomeAssistant,
+        config: ConfigType,
+        async_add_entities: AddEntitiesCallback,
+        discovery_info: DiscoveryInfoType | None = None) -> None:
     """setup via configuration.yaml not supported anymore"""
 
 
 # noinspection PyUnusedLocal
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        async_add_entities: AddEntitiesCallback) -> None:
     """Set up an Exta Life heat controllers """
 
-    core = Core.get(config_entry.entry_id)
-    channels = core.get_channels(DOMAIN_CLIMATE)
+    core: Core = Core.get(config_entry.entry_id)
+    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_CLIMATE)
 
     _LOGGER.debug("Discovery: %s", pformat(channels))
-    async_add_entities([ExtaLifeClimate(device, config_entry) for device in channels])
+    if channels:
+        async_add_entities(
+            [ExtaLifeClimate(channel_data, config_entry) for channel_data in channels]
+        )
 
     core.pop_channels(DOMAIN_CLIMATE)
 
@@ -81,67 +103,74 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):
     """Representation of Exta Life Thermostat."""
 
-    def __init__(self, channel_data, config_entry: ConfigEntry):
+    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
         super().__init__(channel_data, config_entry)
 
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_CLIMATE_SENSOR, channel_data)
 
     @property
-    def supported_features(self):
-        """Return the list of supported features."""
+    def supported_features(self) -> int | None:
+        """Flag supported features."""
         return ClimateEntityFeature.TARGET_TEMPERATURE
 
     @property
-    def max_temp(self):
+    def max_temp(self) -> float:
+        """Return the maximum temperature."""
         return 50
 
     @property
-    def min_temp(self):
+    def min_temp(self) -> float:
+        """Return the minimum temperature."""
         return 5
 
     @property
-    def target_temperature_step(self):
+    def target_temperature_step(self) -> float | None:
+        """Return the supported step of target temperature."""
         return 0.5
 
     @property
-    def precision(self):
+    def precision(self) -> float:
+        """Return the precision of the system."""
         return 0.5
 
     @property
-    def hvac_action(self):
+    def hvac_action(self) -> HVACAction | None:
+        """Return the current running hvac operation if supported."""
         # for now there's no data source to show it. data.power does not reflect this information
         return None
 
     @property
-    def hvac_mode(self):
+    def hvac_mode(self) -> HVACMode | None:
+        """Return hvac operation for example heat, cool mode."""
         return EXTA_HVAC_MODE.get(self.channel_data.get("work_mode"))
 
     @property
-    def hvac_modes(self):
+    def hvac_modes(self) -> list[HVACMode]:
+        """Return the list of available hvac operation modes."""
         return [HVACMode.AUTO, HVACMode.HEAT]
 
-    async def async_set_hvac_mode(self, hvac_mode):
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode (heat, auto => manual, auto)."""
         if await self.async_action(HA_MODE_ACTION.get(hvac_mode), value=self.channel_data.get("value")):
             self.channel_data["work_mode"] = HVAC_MODE_EXTA.get(hvac_mode)
             self.async_schedule_update_ha_state()
 
     @property
-    def temperature_unit(self):
+    def temperature_unit(self) -> str:
         """Return the unit of measurement."""
         return UnitOfTemperature.CELSIUS
 
     @property
-    def current_temperature(self):
+    def current_temperature(self) -> float | None:
         """Return the current temperature."""
         return float(int(self.channel_data.get("temperature")) / 10.0)
 
     @property
-    def target_temperature(self):
+    def target_temperature(self) -> float | None:
         """Return the temperature we try to reach."""
         return float(self.channel_data.get("value") / 10.0)
 
-    async def async_set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperatures."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
 
@@ -155,26 +184,21 @@ class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):
             self.async_schedule_update_ha_state()
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return device specific state attributes."""
-        attr = super().extra_state_attributes
-        if attr is None:
-            attr = {}
-        data = self.channel_data
-        attr.update(
-            {
-                "waiting_to_synchronize": data.get("waiting_to_synchronize"),
-                "temperature_old": data.get("temperature_old")
-            }
-        )
+        es_attr: dict[str, Any] = self._mapping_to_dict(super().extra_state_attributes)
+        ch_data: dict[str, Any] = self.channel_data
+        self._extra_state_attributes_update(ch_data, es_attr, "waiting_to_synchronize")
+        self._extra_state_attributes_update(ch_data, es_attr, "temperature_old")
+        return es_attr
 
-        return attr
-
-    def on_state_notification(self, data):
+    def on_state_notification(self, data: dict[str, Any]) -> None:
         """ React on state notification from controller """
+        super().on_state_notification(data)
+
         state = data.get("state")
 
-        ch_data = self.channel_data.copy()
+        ch_data: dict[str, Any] = self.channel_data.copy()
         ch_data["work_mode"] = True if state == 1 else False
         ch_data["value"] = data.get("value")        # update set (target) temperature
 

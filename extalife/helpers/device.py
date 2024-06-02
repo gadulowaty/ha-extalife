@@ -1,22 +1,19 @@
 """Provides device automations for Exta Life."""
 
 import logging
-from homeassistant.helpers.device_registry import DeviceEntry
-from homeassistant.helpers import device_registry as dr
+from typing import Any
+from homeassistant.helpers.device_registry import (
+    DeviceRegistry,
+    DeviceEntry
+)
+from homeassistant.helpers import device_registry
 from homeassistant.config_entries import ConfigEntry
 from .typing import CoreType
 
 from ..pyextalife import (
+    ExtaLifeDeviceModel,
+    ExtaLifeDeviceModelName,
     DEVICE_ARR_ALL_TRANSMITTER,
-    MODEL_RNK22,
-    MODEL_RNK24,
-    MODEL_P4572,
-    MODEL_P4574,
-    MODEL_P4578,
-    MODEL_P45736,
-    MODEL_RNM24,
-    MODEL_RNP21,
-    MODEL_RNP22,
 )
 
 from .const import (
@@ -55,16 +52,16 @@ class DeviceEvent:
 
 
 class Device:
-    def __init__(self, device: DeviceEntry, device_type):
+    def __init__(self, device: DeviceEntry, device_type: ExtaLifeDeviceModel):
         """dev_info - device info - the same passed to Device Registry
         type  - Exta Life module type e.g. 10 = ROP-21"""
-        self._type = device_type
-        self._device = device
+        self._type: ExtaLifeDeviceModel = device_type
+        self._device: DeviceEntry = device
         self._event_processor = None
 
     @property
-    def model(self):
-        return self._device.model
+    def model(self) -> ExtaLifeDeviceModelName:
+        return ExtaLifeDeviceModelName(self._device.model)
 
     @property
     def type(self):
@@ -113,7 +110,7 @@ class DeviceFactory:
 
 
 class TransmitterDevice(Device):
-    def __init__(self, device: DeviceEntry, device_type):
+    def __init__(self, device: DeviceEntry, device_type: ExtaLifeDeviceModel):
         from .event import ExtaLifeTransmitterEventProcessor
 
         super().__init__(device, device_type)
@@ -132,13 +129,14 @@ class TransmitterDevice(Device):
             TRIGGER_BUTTON_LONG_PRESS,
         )
         buttons = 0
-        if self.model in (MODEL_RNK22, MODEL_P4572):
+        if self.type in (ExtaLifeDeviceModel.RNK22, ExtaLifeDeviceModel.P4572):
             buttons = 2
-        elif self.model in (MODEL_RNK24, MODEL_P4574, MODEL_RNM24, MODEL_RNP21, MODEL_RNP22):
+        elif self.type in (ExtaLifeDeviceModel.RNK24, ExtaLifeDeviceModel.P4574, ExtaLifeDeviceModel.RNM24,
+                            ExtaLifeDeviceModel.RNP21, ExtaLifeDeviceModel.RNP22):
             buttons = 4
-        elif self.model in MODEL_P4578:
+        elif self.type in ExtaLifeDeviceModel.P4578:
             buttons = 8
-        elif self.model in MODEL_P45736:
+        elif self.type in ExtaLifeDeviceModel.P45736:
             buttons = 36
 
         for button in range(1, buttons + 1):
@@ -163,28 +161,31 @@ class TransmitterDevice(Device):
 class DeviceManager:
     def __init__(self, config_entry: ConfigEntry, core: CoreType):
 
-        self._core = core
-        self._config_entry = config_entry
+        self._core: CoreType = core
+        self._config_entry: ConfigEntry = config_entry
 
         self._devices = dict()
 
-    async def register_in_dr(self, dev_info: dict) -> DeviceEntry:
-        device_registry = dr.async_get(self._core.hass)
+    async def register_in_ha_device_registry(self, dev_info: dict[str, Any]) -> DeviceEntry:
 
-        device_entry = device_registry.async_get_or_create(
+        ha_device_registry: DeviceRegistry = device_registry.async_get(self._core.hass)
+
+        device_entry = ha_device_registry.async_get_or_create(
             config_entry_id=self._config_entry.entry_id, **dev_info
         )
 
         return device_entry
 
-    async def async_add(self, device_type, dev_info=None, ha_device=None) -> Device:
+    async def async_add(self, device_type: ExtaLifeDeviceModel,
+                        device_info: dict[str, Any] = None,
+                        ha_device: DeviceEntry = None) -> Device:
         """
         dev_info - device info data in HA device registry format. To be passed to HA Device Registry
         type  - Exta Life module type e.g. 10 = ROP-21
         ha_device: DeviceEntry - boolean whether to register device in HA Device Registry or not
         """
 
-        device_entry = ha_device if ha_device else await self.register_in_dr(dev_info)
+        device_entry = ha_device if ha_device else await self.register_in_ha_device_registry(device_info)
         device = DeviceFactory.get_device(device_entry, device_type)
 
         self._devices.update({device_entry.id: device})
