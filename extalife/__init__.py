@@ -198,13 +198,13 @@ async def async_setup_entry(
         config_entry: ConfigEntry) -> bool:
     """Set up Exta Life component from a Config Entry"""
 
-    _LOGGER.debug("async_setup_entry(): starting for %s", config_entry.entry_id)
+    _LOGGER.debug(f"async_setup_entry(): starting for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
 
     hass.data.setdefault(DOMAIN, {})
     Core.create(hass, config_entry)
     result = await initialize(hass, config_entry)
 
-    _LOGGER.debug("async_setup_entry(): finished for %s", config_entry.entry_id)
+    _LOGGER.debug(f"async_setup_entry(): finished for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
 
     return result
 
@@ -215,12 +215,12 @@ async def async_unload_entry(
         config_entry: ConfigEntry) -> bool:
     """Unload a config entry: unload platform entities, stored data, deregister signal listeners"""
 
-    _LOGGER.debug("async_unload_entry(): starting for %s", config_entry.entry_id)
+    _LOGGER.debug(f"async_unload_entry(): starting for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
 
     core = Core.get(config_entry.entry_id)
     result = await core.unload_entry_from_hass()
 
-    _LOGGER.debug("async_unload_entry(): finished for %s", config_entry.entry_id)
+    _LOGGER.debug(f"async_unload_entry(): finished for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
 
     return result
 
@@ -270,8 +270,8 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     controller_ip: str = el_conf[CONF_CONTROLLER_IP]  # will be known after config flow
 
     try:
-        _LOGGER.info("ExtaLife initializing... [Debugger attached: %s]",
-                     "YES" if ExtaLifeAPI.is_debugger_active() else "NO")
+        _LOGGER.info("ExtaLife initializing '%s'... [Debugger attached: %s]",
+                     config_entry.title, "YES" if ExtaLifeAPI.is_debugger_active() else "NO")
 
         if controller_ip is not None:
             _LOGGER.debug("Trying to connect to controller using IP: %s", controller_ip)
@@ -334,7 +334,7 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     # publish services to HA service registry
     await core.async_register_services()
 
-    _LOGGER.info("Exta Life integration setup successfully!")
+    _LOGGER.info(f"Exta Life integration setup for '{config_entry.title}' finished successfully!")
     return True
 
 
@@ -682,6 +682,7 @@ class ExtaLifeChannel(Entity):
             "manufacturer": PRODUCT_MANUFACTURER,
             "model": self.model,
             "via_device": (DOMAIN, self.controller.mac),
+            "sw_version": None
         }
 
     @property
@@ -858,6 +859,7 @@ class ExtaLifeController(Entity):
     def __init__(self, entry_id: str):
         self._entry_id: str = entry_id
         self._core: Core = Core.get(entry_id)
+        self._attr_translation_key = "controller"
 
     @staticmethod
     def _mapping_to_dict(mapping: Mapping[str, Any] | None) -> dict[str, any]:
@@ -948,12 +950,12 @@ class ExtaLifeController(Entity):
     def available(self) -> bool:
         """Return True if entity is available."""
         # for lost api connection this should return False, so entity status changes to 'unavailable'
-        return self.api.is_connected
+        return self.api is not None
 
     @property
     def state(self) -> str:
         """Return the controller state. it will be either 'ready' or 'unavailable'"""
-        return "ready"
+        return "connected" if self.api.is_connected else "disconnected"
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
@@ -961,11 +963,15 @@ class ExtaLifeController(Entity):
         es_attr = self._mapping_to_dict(super().extra_state_attributes)
         es_attr.update(
                 {
-                     "type": "gateway",
-                     "mac_address": self.mac,
-                     "ipv4_address:": self.api.host,
-                     "software_version": self.api.sw_version,
                      "name": self.api.name,
+                     "type": "gateway",
+                     "mac_address": self.api.mac,
+                     "hostname": self.api.host,
+                     "ipv4_address": self.api.network["ip_address"],
+                     "ipv4_mask": self.api.network["netmask"],
+                     "ipv4_gw": self.api.network["gateway"],
+                     "ipv4_dns": self.api.network["dns"],
+                     "software_version": self.api.sw_version,
                 }
             )
         return es_attr

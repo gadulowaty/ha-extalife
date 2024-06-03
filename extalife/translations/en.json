@@ -99,5 +99,43 @@
       "button_35": "Button 35",
       "button_36": "Button 36"
     }
+  },
+  "entity": {
+    "extalife": {
+      "controller": {
+        "name": "Kontroler EFC-01",
+        "state": {
+          "ready": "Ready",
+          "connected": "Connected",
+          "disconnected": "Disconnected"
+        },
+        "state_attributes": {
+          "name": {
+            "name": "Name"
+          },
+          "type": {
+            "name": "Device type"
+          },
+          "ipv4_address": {
+            "name": "IP address"
+          },
+          "ipv4_netmask": {
+            "name": "Netmask"
+          },
+          "ipv4_gateway": {
+            "name": "Default gateway"
+          },
+          "ipv4_dns": {
+            "name": "DNS server"
+          },
+          "mac_address": {
+            "name": "MAC address"
+          },
+          "software_version": {
+            "name": "Firmware version"
+          }
+        }
+      }
+    }
   }
 }

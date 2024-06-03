@@ -101,7 +101,7 @@ class Core:
         self._transmitter_manager = TransmitterManager(config_entry)
         self._api = ExtaLifeAPI(
             self.hass.loop,
-            on_connect_callback=self._on_reconnect_callback,
+            on_connect_callback=self._on_connect_callback,
             on_disconnect_callback=self._on_disconnect_callback,
         )
         self._signal_callbacks = []
@@ -203,7 +203,7 @@ class Core:
             self._services = ExtaLifeServices(self._hass)
             await self._services.async_register_services()
 
-    async def _on_reconnect_callback(self):
+    async def _on_connect_callback(self) -> None:
         """Execute actions on (re)connection to controller"""
 
         if self._periodic_reconnect_remove_callback is not None:
@@ -213,7 +213,7 @@ class Core:
         if self._controller_entity is not None:
             self._controller_entity.schedule_update_ha_state()
 
-    async def _on_disconnect_callback(self):
+    async def _on_disconnect_callback(self) -> None:
         """Execute actions on disconnection with controller"""
 
         if self._is_unloading or self._is_stopping:
@@ -231,7 +231,7 @@ class Core:
         )
 
     # TODO: APIResponse not dict[str, Any]
-    async def _on_status_notification_callback(self, message: dict[str, Any]):
+    async def _on_status_notification_callback(self, message: dict[str, Any]) -> None:
         if self._is_unloading or self._is_stopping:
             return
 
