@@ -367,7 +367,7 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
     def suggested_unit_of_measurement(self) -> str | None:
         """Return the unit which should be used for the sensor's state."""
 
-        return self.unit_of_measurement
+        return self.native_unit_of_measurement
     
     @property
     def suggested_display_precision(self) -> int | None:        
