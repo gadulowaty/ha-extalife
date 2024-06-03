@@ -29,6 +29,7 @@ PRODUCT_CONTROLLER_MODEL = "EFC-01"
 
 
 class ExtaLifeDeviceModelName(StrEnum):
+
     # Exta Life
     RNK22 = "RNK-22"
     RNK22_TEMP_SENSOR = "RNK-22 temperature sensor"
@@ -453,6 +454,8 @@ class ExtaLifeCmd(IntEnum):
     LOGIN = 1
     CONTROL_DEVICE = 20
     FETCH_RECEIVERS = 37
+    FETCH_RECEIVER_CONFIG = 25
+    FETCH_RECEIVER_CONFIG_DETAILS = 27
     FETCH_SENSORS = 38
     FETCH_TRANSMITTERS = 39
     ACTIVATE_SCENE = 44

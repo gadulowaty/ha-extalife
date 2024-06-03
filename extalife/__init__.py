@@ -276,7 +276,7 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
         if controller_ip is not None:
             _LOGGER.debug("Trying to connect to controller using IP: %s", controller_ip)
         else:
-            _LOGGER.info("No controller IP specified. Trying autodiscovery")
+            _LOGGER.info("No controller IP specified. Trying autodiscovery mode")
 
         # get instance: this will already try to connect and logon
         try:

@@ -159,13 +159,15 @@ SENSOR_TYPES: dict[SensorDeviceClass | ExtaSensorDeviceClass, ELSensorEntityDesc
         native_unit_of_measurement=UnitOfSpeed.METERS_PER_SECOND,
         device_class=SensorDeviceClass.WIND_SPEED,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
         value_path="value",
-        factor=1,
+        factor=0.277777778,
     ),
     SensorDeviceClass.ENERGY: ELSensorEntityDescription(
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=2,
         value_path='total_energy',
         factor=0.00001,
     ),
@@ -173,6 +175,7 @@ SENSOR_TYPES: dict[SensorDeviceClass | ExtaSensorDeviceClass, ELSensorEntityDesc
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=2,
         value_path='manual_energy',
         factor=0.00001,
     ),
@@ -218,6 +221,7 @@ SENSOR_TYPES: dict[SensorDeviceClass | ExtaSensorDeviceClass, ELSensorEntityDesc
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
         factor=0.001,
     ),
     SensorDeviceClass.FREQUENCY: ELSensorEntityDescription(
@@ -251,6 +255,7 @@ SENSOR_TYPES: dict[SensorDeviceClass | ExtaSensorDeviceClass, ELSensorEntityDesc
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.HUMIDITY,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
         factor=1,
     ),
     SensorDeviceClass.BATTERY: ELSensorEntityDescription(
@@ -359,7 +364,13 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
         return value
 
     @property
-    def suggested_display_precision(self) -> int | None:
+    def suggested_unit_of_measurement(self) -> str | None:
+        """Return the unit which should be used for the sensor's state."""
+
+        return self.unit_of_measurement
+    
+    @property
+    def suggested_display_precision(self) -> int | None:        
         """Return the suggested number of decimal digits for display."""
         if self._config.suggested_display_precision is None:
             return super().suggested_display_precision
