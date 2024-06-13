@@ -2,9 +2,11 @@ import asyncio
 import logging
 import importlib
 import datetime
-from typing import Callable, Any
+from typing import (
+    Any,
+    Callable,
+)
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.helpers.entity import Entity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -12,7 +14,8 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from .const import DATA_CORE, DOMAIN, CONF_EXTALIFE_EVENT_SCENE
 from ..pyextalife import (
     ExtaLifeAPI,
-    ExtaLifeCmd
+    ExtaLifeCmd,
+    ExtaLifeResponse
 )
 from .typing import (
     ChannelDataManagerType,
@@ -37,7 +40,7 @@ async def options_change_callback(hass: HomeAssistant, config_entry: ConfigEntry
     """Options update listener"""
 
     core = Core.get(config_entry.entry_id)
-    core.data_manager.setup_periodic_callback()
+    core.data_manager.polling_task_configure()
 
 
 def import_executor_callback(module: str, func: str) -> Callable[[HomeAssistant, ConfigEntry], None] | None:
@@ -65,7 +68,7 @@ class Core:
     _is_stopping = False
 
     @classmethod
-    def create(cls, hass: HomeAssistant, config_entry: ConfigEntry):
+    def create(cls, hass: HomeAssistant, config_entry: ConfigEntry) -> CoreType:
         """Create Core instance for a given Config Entry"""
         cls._hass = hass
         inst = Core(config_entry)
@@ -73,15 +76,13 @@ class Core:
         hass.data[DOMAIN][DATA_CORE] = cls._inst
 
         # register callback for HomeAssistant Stop event
-        cls._hass.bus.async_listen_once(
-            EVENT_HOMEASSISTANT_STOP, cls._on_homeassistant_stop
-        )
+        cls._hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, cls._on_homeassistant_stop)
         return inst
 
     @classmethod
-    def get(cls, entry_id: str) -> CoreType:  # forward
+    def get(cls, config_entry_id: str) -> CoreType:  # forward
         """Get instance of the Core object based on Config Entry ID"""
-        return cls._inst.get(entry_id)
+        return cls._inst.get(config_entry_id)
 
     @classmethod
     def get_hass(cls) -> HomeAssistant:
@@ -114,8 +115,6 @@ class Core:
         self._queue_task = Core.get_hass().loop.create_task(self._queue_worker())
         self._signals = {}
 
-        self._periodic_reconnect_remove_callback = None
-
         self._options_change_remove_callback = config_entry.add_update_listener(
             options_change_callback
         )
@@ -131,9 +130,9 @@ class Core:
         self._is_unloading = True
 
         await Core._callbacks_cleanup(self.config_entry.entry_id)
-        await self.data_manager.async_stop_polling()
+        await self.data_manager.async_polling_task_execute(False, False)
 
-        await self.api.disconnect()
+        await self.api.async_disconnect()
 
         # unload services when the last entry is unloaded
         if len(self._inst) == 1 and self._services:
@@ -155,19 +154,19 @@ class Core:
 
     # noinspection PyUnusedLocal
     @classmethod
-    async def _on_homeassistant_stop(cls, event):
+    async def _on_homeassistant_stop(cls, event) -> None:
         """Called when Home Assistant is shutting down"""
         cls._is_stopping = True
 
         await cls._callbacks_cleanup()
         for inst in cls._inst.values():
             await Core._callbacks_cleanup(inst.config_entry.entry_id)
-            await inst.data_manager.async_stop_polling()
+            await inst.data_manager.async_polling_task_execute(False, False)
 
-            await inst.api.disconnect()
+            await inst.api.async_disconnect()
 
     @classmethod
-    async def _callbacks_cleanup(cls, entry_id=None):
+    async def _callbacks_cleanup(cls, entry_id: str | None = None) -> None:
         """Cleanup signal callbacks and callback-handling asyncio queues"""
         instances = (
             [cls.get(entry_id)]
@@ -178,12 +177,6 @@ class Core:
             inst._queue.put_nowait(None)  # terminate callback worker
             inst.unregister_signal_callbacks()
             inst.unregister_track_time_callbacks()
-
-            if inst._periodic_reconnect_remove_callback:
-                try:
-                    inst._periodic_reconnect_remove_callback()
-                except ValueError:
-                    pass
 
             if inst._options_change_remove_callback:
                 try:
@@ -197,7 +190,7 @@ class Core:
             except asyncio.CancelledError:
                 pass
 
-    async def async_register_services(self):
+    async def async_register_services(self) -> None:
         """ " Register services, but only once"""
         if self._services is None:
             self._services = ExtaLifeServices(self._hass)
@@ -206,46 +199,35 @@ class Core:
     async def _on_connect_callback(self) -> None:
         """Execute actions on (re)connection to controller"""
 
-        if self._periodic_reconnect_remove_callback is not None:
-            self._periodic_reconnect_remove_callback()
+        await self.data_manager.async_polling_task_execute()
 
         # Update controller software info
         if self._controller_entity is not None:
             self._controller_entity.schedule_update_ha_state()
 
-    async def _on_disconnect_callback(self) -> None:
+    async def _on_disconnect_callback(self) -> int:
         """Execute actions on disconnection with controller"""
 
         if self._is_unloading or self._is_stopping:
-            return
+            return 0
+
+        await self.data_manager.async_polling_task_execute(False, False)
 
         # Update controller software info
         if self._controller_entity is not None:
             self._controller_entity.schedule_update_ha_state()
 
-        # need to schedule periodic reconnection attempt
-        if self._periodic_reconnect_remove_callback is not None:
-            self._periodic_reconnect_remove_callback()
-        self._periodic_reconnect_remove_callback = self.async_track_time_interval(
-            self._periodic_reconnect_callback, datetime.timedelta(seconds=30)
-        )
+        return 10
 
-    # TODO: APIResponse not dict[str, Any]
-    async def _on_status_notification_callback(self, message: dict[str, Any]) -> None:
+    async def _on_status_notification_callback(self, notification: ExtaLifeResponse) -> None:
         if self._is_unloading or self._is_stopping:
             return
 
         # forward only state notifications to data manager to update channels
-        if message.get("command") == ExtaLifeCmd.CONTROL_DEVICE:
-            self._data_manager.on_notify(message)
+        if notification.command == ExtaLifeCmd.CONTROL_DEVICE:
+            self._data_manager.on_notify(notification[0])
 
-        self._put_notification_on_event_bus(message)
-
-    # noinspection PyUnusedLocal
-    async def _periodic_reconnect_callback(self, now):
-        """Reconnect with the controller after connection is lost
-        This will be executed periodically until reconnection is successful"""
-        await self.api.async_reconnect()
+        self._put_notification_on_event_bus(notification)
 
     async def unregister_controller(self) -> None:
         """Unregister controller from Device Registry"""
@@ -266,13 +248,12 @@ class Core:
         entity - ExtaLifeController object"""
         self._controller_entity = entity
 
-    # TODO: APIResponse not dict[str, Any]
-    def _put_notification_on_event_bus(self, msg: dict[str, Any]):
+    def _put_notification_on_event_bus(self, notification: ExtaLifeResponse) -> None:
         """ This method raises a notification on HA Event Bus """
-        data = msg.get("data")
-        event = MAP_NOTIF_CMD_TO_EVENT.get(msg.get("command"))
+
+        event = MAP_NOTIF_CMD_TO_EVENT.get(notification.command)
         if event:
-            self._hass.bus.async_fire(event, event_data=data)
+            self._hass.bus.async_fire(event, event_data=notification[0])
 
     @property
     def api(self) -> ExtaLifeAPI:
@@ -298,14 +279,14 @@ class Core:
     def signal_remove_callbacks(self):
         return self._signal_callbacks
 
-    def add_signal_remove_callback(self, callback, cb_type: str):
+    def add_signal_remove_callback(self, callback, cb_type: str) -> None:
         self._signal_callbacks[cb_type] = callback
 
-    def unregister_signal_callbacks(self):
+    def unregister_signal_callbacks(self) -> None:
         for callback in self.signal_remove_callbacks:
             callback()
 
-    def unregister_track_time_callbacks(self):
+    def unregister_track_time_callbacks(self) -> None:
         """Call delete callbacks for time interval registered callbacks"""
         for callback in self._track_time_callbacks:
             callback()
@@ -355,7 +336,7 @@ class Core:
             await async_setup_entry(self.hass, self.config_entry)
             _LOGGER.debug("Custom platform '%s' has been configured")
 
-    async def async_unload_custom_platforms(self):
+    async def async_unload_custom_platforms(self) -> None:
         """Unload other, custom (pseudo)platforms"""
 
         for platform, channels in self._platforms_cust.items():
@@ -383,7 +364,7 @@ class Core:
         remove_callback = async_track_time_interval(self.hass, callback, interval)
         self._track_time_callbacks.append(remove_callback)
 
-        def _managed_remove_callback():
+        def _managed_remove_callback() -> None:
             i = 0
             for cb in self._track_time_callbacks:
                 if cb == remove_callback:
@@ -462,7 +443,7 @@ class Core:
             _LOGGER.debug("queue.put %s", target)
             self._queue.put_nowait({"signal": signal_int, "data": args})
 
-    async def _queue_worker(self):
+    async def _queue_worker(self) -> None:
         _LOGGER.debug("_queue_worker started")
         while True:
             msg = await self._queue.get()

@@ -6,14 +6,17 @@ DOMAIN = "extalife"
 DATA_CORE = "core"
 
 CONF_CONTROLLER_IP = "controller_ip"
-CONF_USER = "user"
+CONF_USERNAME = "user"
 CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"  # in minutes
 DEFAULT_POLL_INTERVAL = 5
+CONF_BACKUP_PATH = "path"
+CONF_BACKUP_SCHEDULE = "schedule"
+CONF_BACKUP_RETENTION = "retention"
 
 OPTIONS_GENERAL_POLL_INTERVAL = "poll_interval"
 OPTIONS_GENERAL_DISABLE_NOT_RESPONDING = "disable_not_responding"
-OPTIONS_COVER_INVERTED_CONTROL = "inverted_control"
+
 
 CONF_OPTIONS = "options"  # additional per-platform configuration
 OPTIONS_GENERAL = "general"  # general settings
@@ -21,7 +24,7 @@ OPTIONS_SWITCH = "switch"  # additional switch configuration
 OPTIONS_LIGHT = "light"  # additional light configuration
 OPTIONS_LIGHT_ICONS_LIST = "icons_list"  # map switches as lights for these Exta Life icons
 OPTIONS_COVER = "cover"  # additional cover configuration
-OPTIONS_COVER_INV_CONTROL = "inverted_control"
+OPTIONS_COVER_INVERTED_CONTROL = "inverted_control"
 
 # signals
 SIGNAL_DATA_UPDATED = f"{DOMAIN}_data_updated"
@@ -85,3 +88,5 @@ TRIGGER_BUTTON_TRIPLE_CLICK = "button_triple_click"
 TRIGGER_BUTTON_LONG_PRESS = "button_long_press"
 
 TRIGGER_SUBTYPE_BUTTON_TEMPLATE = "button_{}"
+
+TO_REDACT = {}

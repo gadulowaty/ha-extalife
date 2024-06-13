@@ -5,18 +5,29 @@ import json
 import logging
 import re
 import socket
+import os
 import sys
 
+from asyncio import (
+    CancelledError as AsyncCancelledError,
+    Lock,
+    StreamReader,
+    StreamWriter,
+    Task,
+    TimeoutError as AsyncTimeoutError,
+)
 from asyncio.events import AbstractEventLoop
 from datetime import datetime
 from enum import (
     IntEnum,
     StrEnum
 )
+
 from typing import (
     Any,
     Awaitable,
     Callable,
+    Tuple,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,6 +37,17 @@ PRODUCT_MANUFACTURER = "ZAMEL"
 PRODUCT_SERIES = "Exta Life"
 PRODUCT_SERIES_EXTA_FREE = "Exta Free"
 PRODUCT_CONTROLLER_MODEL = "EFC-01"
+
+ExtaLifeResponseType = "ExtaLifeResponse"
+ExtaLifeActionType = "ExtaLifeAction"
+ExtaLifeErrorType = "ExtaLifeError"
+ExtaLifeConnType = "ExtaLifeConn"
+
+
+class ExtaLifeEvent(IntEnum):
+    CONNECTED = 1,
+    DISCONNECTED = 2,
+    NOTIFICATION = 3,
 
 
 class ExtaLifeDeviceModelName(StrEnum):
@@ -151,10 +173,42 @@ class ExtaLifeDeviceModel(IntEnum):
     SRP03 = 339
 
 
-class ExtaLifeDeviceInfo:
+class ExtaLifeAction(StrEnum):
+
+    # Exta Life Actions
+    EXTA_LIFE_TURN_ON = "TURN_ON"
+    EXTA_LIFE_TURN_OFF = "TURN_OFF"
+    EXTA_LIFE_SET_BRI = "SET_BRIGHTNESS"
+    EXTA_LIFE_SET_RGB = "SET_COLOR"
+    EXTA_LIFE_SET_POS = "SET_POSITION"
+    EXTA_LIFE_GATE_POS = "SET_GATE_POSITION"
+    EXTA_LIFE_SET_TMP = "SET_TEMPERATURE"
+    EXTA_LIFE_STOP = "STOP"
+    EXTA_LIFE_OPEN = "UP"
+    EXTA_LIFE_CLOSE = "DOWN"
+    EXTA_LIFE_SET_SLR_MODE = "SET_MODE"
+    EXTA_LIFE_SET_RGT_MODE_MANUAL = "RGT_SET_MODE_MANUAL"
+    EXTA_LIFE_SET_RGT_MODE_AUTO = "RGT_SET_MODE_AUTO"
+
+    # Exta Free Actions
+    EXTA_FREE_TURN_ON_PRESS = "TURN_ON_PRESS"
+    EXTA_FREE_TURN_ON_RELEASE = "TURN_ON_RELEASE"
+    EXTA_FREE_TURN_OFF_PRESS = "TURN_OFF_PRESS"
+    EXTA_FREE_TURN_OFF_RELEASE = "TURN_OFF_RELEASE"
+    EXTA_FREE_UP_PRESS = "UP_PRESS"
+    EXTA_FREE_UP_RELEASE = "UP_RELEASE"
+    EXTA_FREE_DOWN_PRESS = "DOWN_PRESS"
+    EXTA_FREE_DOWN_RELEASE = "DOWN_RELEASE"
+    EXTA_FREE_BRIGHT_UP_PRESS = "BRIGHT_UP_PRESS"
+    EXTA_FREE_BRIGHT_UP_RELEASE = "BRIGHT_UP_RELEASE"
+    EXTA_FREE_BRIGHT_DOWN_PRESS = "BRIGHT_DOWN_PRESS"
+    EXTA_FREE_BRIGHT_DOWN_RELEASE = "BRIGHT_DOWN_RELEASE"
+
+
+class ExtaLifeMap:
 
     # device types string mapping
-    __model_to_name_map: dict[ExtaLifeDeviceModel, ExtaLifeDeviceModelName] = {
+    __MAP_TYPE_TO_MODEL_NAME: dict[ExtaLifeDeviceModel, ExtaLifeDeviceModelName] = {
         ExtaLifeDeviceModel.RNK22: ExtaLifeDeviceModelName.RNK22,
         ExtaLifeDeviceModel.RNK22_TEMP_SENSOR: ExtaLifeDeviceModelName.RNK22_TEMP_SENSOR,
         ExtaLifeDeviceModel.RNK24: ExtaLifeDeviceModelName.RNK24,
@@ -211,28 +265,157 @@ class ExtaLifeDeviceInfo:
         ExtaLifeDeviceModel.RDP01: ExtaLifeDeviceModelName.RDP01,
         ExtaLifeDeviceModel.RDP02: ExtaLifeDeviceModelName.RDP02,
         ExtaLifeDeviceModel.RDP11: ExtaLifeDeviceModelName.RDP11,
-        ExtaLifeDeviceModel.SRP03: ExtaLifeDeviceModelName.SRP03
+        ExtaLifeDeviceModel.SRP03: ExtaLifeDeviceModelName.SRP03,
     }
 
-    __name_to_model_map: dict[ExtaLifeDeviceModelName, ExtaLifeDeviceModel] = {
-        v: k for k, v in __model_to_name_map.items()
+    __MAP_MODEL_NAME_TO_TYPE: dict[ExtaLifeDeviceModelName, ExtaLifeDeviceModel] = {
+        v: k for k, v in __MAP_TYPE_TO_MODEL_NAME.items()
+    }
+
+    __MAP_ACTION_TO_STATE: dict = {
+
+        # Exta Life:
+        ExtaLifeAction.EXTA_LIFE_TURN_ON: 1,
+        ExtaLifeAction.EXTA_LIFE_TURN_OFF: 0,
+        ExtaLifeAction.EXTA_LIFE_OPEN: 1,
+        ExtaLifeAction.EXTA_LIFE_CLOSE: 0,
+        ExtaLifeAction.EXTA_LIFE_STOP: 2,
+        ExtaLifeAction.EXTA_LIFE_SET_POS: None,
+        ExtaLifeAction.EXTA_LIFE_GATE_POS: 1,
+        ExtaLifeAction.EXTA_LIFE_SET_RGT_MODE_AUTO: 0,
+        ExtaLifeAction.EXTA_LIFE_SET_RGT_MODE_MANUAL: 1,
+        ExtaLifeAction.EXTA_LIFE_SET_TMP: 1,
+
+        # Exta Free:
+        ExtaLifeAction.EXTA_FREE_TURN_ON_PRESS: 1,
+        ExtaLifeAction.EXTA_FREE_TURN_ON_RELEASE: 2,
+        ExtaLifeAction.EXTA_FREE_TURN_OFF_PRESS: 3,
+        ExtaLifeAction.EXTA_FREE_TURN_OFF_RELEASE: 4,
+        ExtaLifeAction.EXTA_FREE_UP_PRESS: 1,
+        ExtaLifeAction.EXTA_FREE_UP_RELEASE: 2,
+        ExtaLifeAction.EXTA_FREE_DOWN_PRESS: 3,
+        ExtaLifeAction.EXTA_FREE_DOWN_RELEASE: 4,
+        ExtaLifeAction.EXTA_FREE_BRIGHT_UP_PRESS: 1,
+        ExtaLifeAction.EXTA_FREE_BRIGHT_UP_RELEASE: 2,
+        ExtaLifeAction.EXTA_FREE_BRIGHT_DOWN_PRESS: 3,
+        ExtaLifeAction.EXTA_FREE_BRIGHT_DOWN_RELEASE: 4,
     }
 
     @classmethod
-    def get_model_name(cls, device_type: ExtaLifeDeviceModel) -> ExtaLifeDeviceModelName:
+    def type_to_model_name(cls, device_type: ExtaLifeDeviceModel) -> ExtaLifeDeviceModelName:
 
-        if device_type in cls.__model_to_name_map:
-            return cls.__model_to_name_map.get(device_type)
+        if device_type in cls.__MAP_TYPE_TO_MODEL_NAME:
+            return cls.__MAP_TYPE_TO_MODEL_NAME.get(device_type)
 
         return ExtaLifeDeviceModelName(f"unknown device model ({device_type})")
 
     @classmethod
-    def get_device_type(cls, model_name: ExtaLifeDeviceModelName) -> ExtaLifeDeviceModel:
+    def model_name_to_type(cls, model_name: ExtaLifeDeviceModelName) -> ExtaLifeDeviceModel:
 
-        if model_name in cls.__name_to_model_map:
-            return cls.__name_to_model_map.get(model_name)
+        if model_name in cls.__MAP_MODEL_NAME_TO_TYPE:
+            return cls.__MAP_MODEL_NAME_TO_TYPE.get(model_name)
 
         return ExtaLifeDeviceModel(0)
+
+    @classmethod
+    def action_to_state(cls, action: ExtaLifeActionType) -> int:
+
+        return cls.__MAP_ACTION_TO_STATE.get(action)
+
+
+class ExtaLifeCmd(IntEnum):
+    """ Supported Exta Life controller commands"""
+
+    NOOP = 0
+    LOGIN = 1
+    ACTIVATE_SCENE = 44
+    CONTROL_DEVICE = 20
+    DOWNLOAD_BACKUP = 500
+    FETCH_EXTA_FREE = 203
+    FETCH_NETWORK_SETTINGS = 102
+    FETCH_RECEIVERS = 37
+    FETCH_RECEIVER_CONFIG = 25
+    FETCH_RECEIVER_CONFIG_DETAILS = 27
+    FETCH_SENSORS = 38
+    FETCH_TRANSMITTERS = 39
+    GET_EFC_CONFIG_DETAILS = 154
+    RESTART = 150
+    CHECK_VERSION = 151
+
+
+class ExtaLifeCmdErrorCode(IntEnum):
+    ACCOUNT_ALREADY_EXISTS = -67
+    ACTIVATE_INVALID_PARAMETERS = -50
+    BATTERY_DEVICE_STANDBY = -40
+    CAN_NOT_RESTORE_USER = -22
+    CLOUD_ERROR_LOCAL_ONLY = -71
+    CLOUD_IS_DISABLED = -34
+    CLOUD_TOO_MUCH_REQUEST = -60
+    CONFIG_EXISTS = -17
+    CONNECTION_INVALID = 0
+    DEVICE_ALREADY_ADDED = -16
+    DEVICE_CALIBRATION_INVALID = -36
+    DEVICE_CONFIG_DO_NOT_EXISTS = -35
+    DEVICE_NOT_RESPONDING = -13
+    DEVICE_POSITION_INVALID = -37
+    DEVICE_REMOTE_EXISTS = -38
+    DISCOVERY_IN_PROGRESS = -19
+    EMAIL_ALREADY_SEND = -66
+    EMAIL_NOT_EXISTS = -69
+    EXCEEDED_LIMIT_PASSWORD_RESET = -68
+    FILE_END_OF_FILE = -33
+    FILE_INVALID_READ_DATA = -32
+    FILE_IS_CORRUPTED = -30
+    FILE_IS_TO_BIG = -29
+    FILE_NO_FOUND = -28
+    FILE_READ_MORE_DATA = -31
+    INVALID_CONFIG = -12
+    INVALID_DATA = -10
+    INVALID_LOG_PASS = -2
+    INVALID_OLD_PASSWORD = -8
+    INVALID_PERMISSIONS = -7
+    INVALID_USER = -6
+    MAX_COUNT = -4
+    NO_SERVER_CONNECTION = -24
+    NO_SUCH_CHANNEL = -11
+    NO_SUCH_DATA = -14
+    NO_SUCH_DEVICE = -9
+    NO_SUCH_USER = -5
+    NO_VALID_LIST = 3
+    OUT_OF_MEMORY = -101
+    OUT_OF_MEMORY_SERIALIZE_JSON = -102
+    PASSWORD_EXIST = -23
+    RESULT_EXCEPTION_CLOUD_ERROR_FROM_SERVER = -61
+    RESULT_EXCEPTION_CLOUD_OBJECT_UNDEFINED = -62
+    RESULT_EXCEPTION_NULL_POINTER = -100
+    SCENE_TURNED_OFF = -15
+    SD_CARD_BUSY = -27
+    SERVER_CLOSE_CONNECTION = 400
+    SESSION_INVALID = -1
+    SIGNATURE_ERROR = 4
+    TIMEOUT_CONNECTION_CONTROLLER_CLOUD = -70
+    UNDEFINED_PHONE_ID = -63
+    UNKNOWN = 1
+    UNSUPPORTED_OPERATION = 2
+    UPDATE_IN_PROGRESS = -18
+    UPLOAD_INIT_FAIL = -21
+    UPLOAD_IN_PROGRESS = -20
+    USERS_LIMIT = -200
+    USER_ALREADY_EXISTS = -3
+    WEB_DOWNLOAD_PROGRESS_FAIL = -25
+    WEB_SERVER_FILE_NOT_EXIST = -26
+    SUCCESS = 0xFFFF
+
+
+class ExtaLifeResponseStatus(StrEnum):
+    SUCCESS = "success"
+    SEARCHING = "searching"
+    FAILURE = "failure"
+    PARTIAL = "partial"
+    NOTIFICATION = "notification"
+    BROADCAST = "broadcast"
+    VALIDATION = "validation"
+    PROGRESS = "progress"
 
 
 # Exta Life devices
@@ -441,62 +624,111 @@ DEVICE_ICON_ARR_LIGHT = [
     17
 ]
 
+ExtaLifeData = dict[str, Any]
+ExtaLifeDataList = list[ExtaLifeData]
+
+
+class ExtaLifeMessage:
+    def __init__(self, command: ExtaLifeCmd = ExtaLifeCmd.NOOP):
+        self._command: ExtaLifeCmd = command
+
+    @property
+    def command(self) -> ExtaLifeCmd:
+        return self._command
+
+
+class ExtaLifeRequest(ExtaLifeMessage):
+
+    def __init__(self, command: ExtaLifeCmd, data: ExtaLifeData | None = None) -> None:
+        super().__init__(command)
+
+        self._data: ExtaLifeData = data if data else {}
+
+    def to_json(self) -> str:
+        return json.dumps({"command": self.command, "data": self._data})
+
+    def to_string(self) -> str:
+        return str(self.to_json()) if self.command != ExtaLifeCmd.NOOP else " "
+
+    def to_bytes(self) -> bytes:
+        return (self.to_string() + chr(3)).encode()
+
+
+class ExtaLifeResponse(ExtaLifeMessage):
+
+    def __getitem__(self, item: Any) -> ExtaLifeData:
+        if isinstance(item, int) and 0 <= item < self.length:
+            return self._data[item]
+        raise KeyError()
+
+    @staticmethod
+    def fix_keys(response: str) -> str:
+        """Dirty hack to replace some of the keys in response from EFC controller"""
+
+        # for find, replace in {"synch": "sync_time", "last_synch": "last_sync"}.items():
+        #     response = response
+        return response
+
+    def __init__(self, response: str | list[ExtaLifeResponseType], request: ExtaLifeRequest | None = None):
+
+        self._request: ExtaLifeRequest | None = request
+        self._data: ExtaLifeDataList = []
+
+        if isinstance(response, str):
+            # convert to list
+            response_data: dict[str, Any] = json.loads(self.fix_keys(response))
+            super().__init__(ExtaLifeCmd(response_data.get("command")))
+            self._status: ExtaLifeResponseStatus = ExtaLifeResponseStatus(response_data.get("status"))
+            if self.command == ExtaLifeCmd.DOWNLOAD_BACKUP:
+                response_data.pop("command")
+                response_data.pop("status")
+                self._data.append(response_data)
+            else:
+                self._data.append(response_data.get("data"))
+        else:
+            super().__init__(response[-1].command)
+            self._status: ExtaLifeResponseStatus = response[-1].status
+            for x in range(0, len(response)):
+                for data_item in response[x]._data:
+                    self._data.append(data_item)
+
+    @property
+    def request(self) -> ExtaLifeRequest | None:
+        return self._request
+
+    @property
+    def status(self) -> ExtaLifeResponseStatus:
+        return self._status
+
+    @property
+    def length(self) -> int:
+        return len(self._data)
+
+    @property
+    def data(self) -> ExtaLifeDataList:
+        return self._data
+
+    @property
+    def error_code(self) -> ExtaLifeCmdErrorCode:
+        if self.status == ExtaLifeResponseStatus.FAILURE and self.length > 0:
+            return ExtaLifeCmdErrorCode(int(self.data[0]["code"]))
+        return ExtaLifeCmdErrorCode.SUCCESS
+
+    @property
+    def error_message(self) -> str:
+        return self.error_code.name
+
+
 try:
     from .fake_channels import FAKE_RECEIVERS, FAKE_SENSORS, FAKE_TRANSMITTERS      # pylint: disable=unused-import
 except ImportError:
     FAKE_RECEIVERS = FAKE_SENSORS = FAKE_TRANSMITTERS = []
 
 
-class ExtaLifeCmd(IntEnum):
-    """ Supported Exta Life controller commands"""
-
-    NOOP = 0
-    LOGIN = 1
-    ACTIVATE_SCENE = 44
-    CONTROL_DEVICE = 20
-    FETCH_EXTA_FREE = 203
-    FETCH_NETWORK_SETTINGS = 102
-    FETCH_RECEIVERS = 37
-    FETCH_RECEIVER_CONFIG = 25
-    FETCH_RECEIVER_CONFIG_DETAILS = 27
-    FETCH_SENSORS = 38
-    FETCH_TRANSMITTERS = 39
-    GET_EFC_CONFIG_DETAILS = 154
-    RESTART = 150
-    VERSION = 151
-
-
 class ExtaLifeAPI:
     """ Main API class: wrapper for communication with controller """
 
     # Actions
-    ACTION_TURN_ON = "TURN_ON"
-    ACTION_TURN_OFF = "TURN_OFF"
-    ACTION_SET_BRI = "SET_BRIGHTNESS"
-    ACTION_SET_RGB = "SET_COLOR"
-    ACTION_SET_POS = "SET_POSITION"
-    ACTION_SET_GATE_POS = "SET_GATE_POSITION"
-    ACTION_SET_TMP = "SET_TEMPERATURE"
-    ACTION_STOP = "STOP"
-    ACTION_OPEN = "UP"
-    ACTION_CLOSE = "DOWN"
-    ACTION_SET_SLR_MODE = "SET_MODE"
-    ACTION_SET_RGT_MODE_MANUAL = "RGT_SET_MODE_MANUAL"
-    ACTION_SET_RGT_MODE_AUTO = "RGT_SET_MODE_AUTO"
-
-    # Exta Free Actions
-    ACTION_EXTA_FREE_TURN_ON_PRESS = "TURN_ON_PRESS"
-    ACTION_EXTA_FREE_TURN_ON_RELEASE = "TURN_ON_RELEASE"
-    ACTION_EXTA_FREE_TURN_OFF_PRESS = "TURN_OFF_PRESS"
-    ACTION_EXTA_FREE_TURN_OFF_RELEASE = "TURN_OFF_RELEASE"
-    ACTION_EXTA_FREE_UP_PRESS = "UP_PRESS"
-    ACTION_EXTA_FREE_UP_RELEASE = "UP_RELEASE"
-    ACTION_EXTA_FREE_DOWN_PRESS = "DOWN_PRESS"
-    ACTION_EXTA_FREE_DOWN_RELEASE = "DOWN_RELEASE"
-    ACTION_EXTA_FREE_BRIGHT_UP_PRESS = "BRIGHT_UP_PRESS"
-    ACTION_EXTA_FREE_BRIGHT_UP_RELEASE = "BRIGHT_UP_RELEASE"
-    ACTION_EXTA_FREE_BRIGHT_DOWN_PRESS = "BRIGHT_DOWN_PRESS"
-    ACTION_EXTA_FREE_BRIGHT_DOWN_RELEASE = "BRIGHT_DOWN_RELEASE"
 
     # Channel Types
     CHN_TYP_RECEIVERS = "receivers"
@@ -507,10 +739,130 @@ class ExtaLifeAPI:
     _debugger: bool | None = None
 
     @classmethod
-    def _get_channels_int(cls, data_js: list[dict[str, any]], dummy_ch: bool = False) -> list[dict[str, any]]:
+    def is_debugger_active(cls) -> bool:
+        """Return if the debugger is currently active"""
+
+        if cls._debugger is None:
+            cls._debugger = hasattr(sys, "get""trace") and sys.gettrace() is not None
+            if not cls._debugger:
+                debugger_tool = sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID)
+                cls._debugger = debugger_tool is not None and debugger_tool != ""
+
+        return cls._debugger
+
+    @classmethod
+    def discover_controller(cls) -> str:
+        """ Returns controller IP address if found, otherwise None"""
+        return ExtaLifeConn.discover_controller()
+
+    def __init__(self, loop: AbstractEventLoop | None = None,
+                 on_connect_callback: Callable[[], Awaitable] | None = None,
+                 on_disconnect_callback: Callable[[], Awaitable[int]] | None = None,
+                 on_notification_callback: Callable[[ExtaLifeResponse], Awaitable] | None = None):
+        """ API Object constructor
+        on_connect_callback - optional callback for notifications when API connects to the controller and performs
+                              successful login
+        on_disconnect_callback - optional callback for notifications when API loses connection to the controller """
+
+        self._mac: str | None = None
+        self._name: str | None = None
+
+        # set on_connect callback to notify caller
+        self._on_connect_callback: Callable[[], Awaitable] | None = on_connect_callback
+        self._on_disconnect_callback: Callable[[], Awaitable[int]] | None = on_disconnect_callback
+        self._on_notification_callback: Callable[[ExtaLifeResponse], Awaitable] | None = on_notification_callback
+
+        self._loop: AbstractEventLoop = loop if loop is not None else asyncio.get_running_loop()
+
+        self._host: str = ""
+        self._port: int = 0
+        self._username: str = ""
+        self._password: str = ""
+        self._connection: ExtaLifeConn | None = None
+        self._network: dict[str, str] = self._create_network_info()
+        self._version: dict[str, Any] = self._create_version_info()
+        self._reconnect_task: Task | None = None
+
+    @staticmethod
+    def _config_backup_rotate(backup_path: str, backup_prefix: str, backup_retention: int) -> None:
+        # TODO: Missing one-liner
+        from pathlib import Path
+
+        backup_files: dict[str, list[Path]] = {}
+        backup_files_size: int = 0
+        backup_files_count: int = 0
+        path = Path(backup_path)
+        for item in path.iterdir():
+            if item.is_file() and item.name.startswith(backup_prefix):
+                (file_base, file_ext) = item.name.rsplit(".")
+                backup_files.setdefault(file_base, [])
+                backup_files[file_base].append(item)
+                backup_files_size += item.stat().st_size
+                backup_files_count += 1
+
+        backup_deleted_size: int = 0
+        backup_deleted_count: int = 0
+
+        entries = sorted(backup_files.keys())
+        entries_len = len(entries)
+
+        if backup_retention and (entries_len - backup_retention > 0):
+
+            _LOGGER.debug(f"ConfigRotate: Requested rotation to {backup_retention} entries. "
+                          f"Found {entries_len} entries. Total {backup_files_count} file(s) of "
+                          f"size {backup_files_size} byte(s)")
+
+            for index in range(0, entries_len):
+                entry = entries[index]
+                for backup_file in backup_files[entry]:
+                    if index < entries_len - backup_retention:
+                        try:
+                            backup_file_size = backup_file.stat().st_size
+                            backup_file.unlink(True)
+                            backup_deleted_size += backup_file_size
+                            backup_deleted_count += 1
+                        except OSError as err:
+                            _LOGGER.warning(f"ConfigRotate: Failed to remove '{backup_file.name}', {err}")
+                            continue
+
+            _LOGGER.debug(f"ConfigRotate: Removed {entries_len - backup_retention} entries. Total "
+                          f"{backup_deleted_count} files of size {backup_deleted_size} byte(s) has been deleted")
+
+        _LOGGER.debug(f"ConfigRotate: Backup contains {min(entries_len, backup_retention)} entries. Total "
+                      f"{backup_files_count - backup_deleted_count} file(s) of size "
+                      f"{backup_files_size - backup_deleted_size} byte(s)")
+
+    @staticmethod
+    def _create_network_info(ip_address: str = "",
+                             netmask: str = "",
+                             gateway: str = "",
+                             dns: str = "") -> dict[str, str]:
+        """Build network info dictionary structure"""
+        return {
+            "ip_address": ip_address,
+            "netmask": netmask,
+            "gateway": gateway,
+            "dns": dns,
+        }
+
+    @staticmethod
+    def _create_version_info(installed: str = "",
+                             web: str = "",
+                             update: bool = False,
+                             beta: str = "") -> dict[str, Any]:
+        """Build version info dictionary structure"""
+        return {
+            "installed": installed,
+            "web": web,
+            "update": update,
+            "beta": beta,
+        }
+
+    @staticmethod
+    def _transform_channels(data_list: ExtaLifeDataList, dummy_channel: bool = False) -> list[dict[str, any]]:
         """
         data_js - list of TCP command data in JSON dict
-        dummy_ch - dummy channel number? For Transmitters there is no channel info. Make it # per device
+        dummy_channel - dummy channel number? For Transmitters there is no channel info. Make it # per device
 
         The method will transform TCP JSON into list of channels.
         Each channel will look like rephrased TCP JSON and will consist of attributes
@@ -560,12 +912,10 @@ class ExtaLifeAPI:
         }]
         """
 
-        def_channel = None
-        if dummy_ch:
-            def_channel = '#'
+        def_channel = "#" if dummy_channel else None
         channels = []  # list of JSON dicts
-        for cmd in data_js:
-            for device in cmd["data"]["devices"]:
+        for data in data_list:
+            for device in data["devices"]:
                 dev = device.copy()
 
                 if dev.get("exta_free_device") is True:
@@ -583,104 +933,121 @@ class ExtaLifeAPI:
                     channels.append(channel)
         return channels
 
-    @classmethod
-    def is_debugger_active(cls) -> bool:
-        """Return if the debugger is currently active"""
+    def _config_backup_get_schedule_name(self, ident: str = "", schedule: str = ""):
+        # TODO: Missing one-liner
+        if not ident:
+            ident = self.mac
+        if schedule:
+            schedule = schedule[0:1].upper() + schedule[1:].lower()
+        return f"Backup{schedule}__{ident.replace(".", "_").replace(":", "").upper()}"
 
-        if cls._debugger is None:
-            cls._debugger = hasattr(sys, "gettrace") and sys.gettrace() is not None
-            if not cls._debugger:
-                debugger_tool = sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID)
-                cls._debugger = debugger_tool is not None and debugger_tool != ""
+    def _config_backup_get_file_base(self, schedule: str = "", ident: str = "") -> str:
+        # TODO: Missing one-liner
+        return f"{self._config_backup_get_schedule_name(ident, schedule)}__{datetime.now().strftime("%Y%m%d_%H%M%S")}"
 
-        return cls._debugger
+    async def _async_reconnect_task(self, reconnect: int) -> None:
+        while True:
+            await asyncio.sleep(reconnect)
+            if not self.is_connected:
+                try:
+                    await self.async_connect(self.username, self.password, self.host, self.port, timeout=5.0)
+                    break
 
-    @classmethod
-    def discover_controller(cls) -> str | None:
-        """ Returns controller IP address if found, otherwise None"""
-        return TCPAdapter.discover_controller()
+                except asyncio.CancelledError:
+                    _LOGGER.debug("Reconnect task has been canceled")
+                    break
 
-    # TODO: APIResponse not dict[str, Any]
-    def __init__(self, loop: AbstractEventLoop,
-                 on_connect_callback: Callable[[], Awaitable] | None = None,
-                 on_disconnect_callback: Callable[[], Awaitable] | None = None,
-                 on_notification_callback: Callable[[dict[str, Any]], Awaitable] | None = None):
-        """ API Object constructor
-        on_connect - optional callback for notifications when API connects to the controller and performs
-                    successful login
+                except ExtaLifeError as err:
+                    _LOGGER.warning(f"Reconnect failed will try later, {err}")
+                    continue
+        return
 
-        on_disconnect - optional callback for notifications when API loses connection to the controller """
-
-        self.tcp: TCPAdapter | None = None
-        self._mac: str | None = None
-        self._sw_version: str | None = None
-        self._name: str | None = None
-
-        # set on_connect callback to notify caller
-        self._on_connect_callback: Callable[[], Awaitable] | None = on_connect_callback
-        self._on_disconnect_callback: Callable[[], Awaitable] | None = on_disconnect_callback
-        # TODO: APIResponse not dict[str, Any]
-        self._on_notification_callback: Callable[[dict[str, Any]], Awaitable] | None = on_notification_callback
-
-        self._is_connected = False
-
-        self._loop: AbstractEventLoop = loop
-
-        self._host: str | None = None
-        self._user: str | None = None
-        self._password: str | None = None
-        self._connection: TCPAdapter | None = None
-        self._network: dict[str, str] | None = self.create_network_info()
-
-    @staticmethod
-    def create_network_info(ip_address: str = "",
-                            netmask: str = "",
-                            gateway: str = "",
-                            dns: str = "") -> dict[str, str]:
-        """Build network info dictionary structure"""
-        return {
-            "ip_address": ip_address,
-            "netmask": netmask,
-            "gateway": gateway,
-            "dns": dns,
-        }
-
-    async def _async_do_tcp_connected_callback(self) -> None:
+    async def _async_do_conn_connected(self, sender: ExtaLifeConnType) -> None:
         """ Called when connectivity is (re)established and logged on successfully """
-        self._is_connected = True
+
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
+            try:
+                await self._reconnect_task
+            except AsyncCancelledError:
+                _LOGGER.debug(f"Reconnect task has been finished")
+                pass
+            self._reconnect_task = None
+
+        self._connection = sender
+        self._host = sender.host
+        self._port = sender.port
+        self._username = sender.username
+        self._password = sender.password
 
         # refresh config details
-        config_details = await self.async_get_config_details()
+        config_details: ExtaLifeData | None = await self.async_get_config_details()
         if config_details:
-            self._name = config_details["network"]["name"]
-            self._sw_version = config_details["version"]["efc01"]
-            mac: str = config_details["network"]["mac"].lower()
-            self._mac = ':'.join(mac[pos:pos + 2] for pos in range(0, len(mac), 2))
-            self._network = self.create_network_info(config_details["network_actual"]["ip"],
-                                                     config_details["network_actual"]["mask"],
-                                                     config_details["network_actual"]["gate"],
-                                                     config_details["network_actual"]["dns_prime"])
+            network = config_details.get("network")
+            if network:
+                self._name = network.get("name", "")
+                mac: str = network.get("mac", "").lower()
+                self._mac = ':'.join(mac[pos:pos + 2] for pos in range(0, len(mac), 2))
+
+            # check if network_actual exists since it is supported from fw ver 1.6.29)
+            network_actual = config_details.get("network_actual")
+            if network_actual:
+                self._network = self._create_network_info(network_actual.get("ip", ""),
+                                                          network_actual.get("mask", ""),
+                                                          network_actual.get("gate", ""),
+                                                          network_actual.get("dns_prime", ""))
+            else:
+                self._network = self._create_network_info()
+
+        version_info: ExtaLifeData | None = await self.async_check_version(False)
+        if version_info:
+            self._version = self._create_version_info(version_info.get("installed_version", ""),
+                                                      version_info.get("web_version", ""),
+                                                      int(version_info.get("update_state", 0)) > 0,
+                                                      version_info.get("beta_software", ""))
+        else:
+            self._version = self._create_version_info()
 
         if self._on_connect_callback is not None:
-            # await self._loop.run_in_executor(None, self._on_connect_callback)
             await self._on_connect_callback()
 
-    async def _async_do_tcp_disconnected_callback(self) -> None:
+        _LOGGER.info(f"Controller EFC-01 {self.host}:{self.port} is now connected")
+
+    # noinspection PyUnusedLocal
+    async def _async_do_conn_disconnected(self, sender: ExtaLifeConnType, should_reconnect: bool) -> None:
         """ Called when connectivity is lost """
-        self._is_connected = False
-        self._network = self.create_network_info()
 
-        if self._on_disconnect_callback is not None:
-            # await self._loop.run_in_executor(None, self._on_disconnect_callback)
-            await self._on_disconnect_callback()
+        if self.is_connected:
+            self._connection = None
 
-    # TODO: APIResponse not dict[str, Any]
-    async def _async_do_tcp_notification_callback(self, data: dict[str, Any]) -> None:
+            reconnect = 0
+            if self._on_disconnect_callback:
+                reconnect = await self._on_disconnect_callback()
+
+            if should_reconnect and reconnect > 0:
+                _LOGGER.error(f"Lost connection to EFC-01 controller, reconnect timer set to {reconnect} second(s)")
+                self._reconnect_task = self._loop.create_task(self._async_reconnect_task(reconnect))
+            else:
+                _LOGGER.info(f"Connection to EFC-01 controller has been closed")
+
+        self._network = self._create_network_info()
+        self._version = self._create_version_info()
+
+    # noinspection PyUnusedLocal
+    async def _async_do_conn_notification(self, sender: ExtaLifeConnType, notification: ExtaLifeResponse) -> None:
         """ Called when notification from the controller is received """
 
         if self._on_notification_callback is not None:
             # forward only device status changes to the listener
-            await self._on_notification_callback(data)
+            await self._on_notification_callback(notification)
+
+    async def _async_do_conn_event_callback(self, sender: ExtaLifeConnType, event: ExtaLifeEvent, data: Any) -> None:
+        if event == ExtaLifeEvent.CONNECTED:
+            await self._async_do_conn_connected(sender)
+        elif event == ExtaLifeEvent.DISCONNECTED:
+            await self._async_do_conn_disconnected(sender, data)
+        elif event == ExtaLifeEvent.NOTIFICATION:
+            await self._async_do_conn_notification(sender, data)
 
     async def async_get_mac_address(self) -> str | None:
         from getmac import get_mac_address
@@ -688,118 +1055,161 @@ class ExtaLifeAPI:
 
         return await self._loop.run_in_executor(None, get_mac_address, None, self._host, None, self._host)
 
-    async def async_connect(self, user: str, password: str, host: str | None = None, timeout: float = 30.0) -> bool:
+    async def async_post_command(self, command: ExtaLifeCmd, data: ExtaLifeData | None = None) -> None:
+        # TODO: Missing one-liner
+
+        if not self.is_connected:
+            _LOGGER.warning(f"Controller {self.host} is not connected")
+            return None
+
+        try:
+            await self._connection.async_post_command(command, data)
+        except ExtaLifeError as err:
+            _LOGGER.error(f"Controller {self.host} failed to execute command {command.name}, {err}")
+            return None
+
+    async def async_exec_command(
+            self, command: ExtaLifeCmd, data: ExtaLifeData | None = None
+    ) -> ExtaLifeResponse | None:
+        # TODO: Missing one-liner
+
+        if not self.is_connected:
+            _LOGGER.warning(f"Controller {self.host} is not connected")
+            return None
+
+        try:
+            return await self._connection.async_exec_command(command, data)
+        except ExtaLifeError as err:
+            _LOGGER.error(f"Controller {self.host} failed to execute command {command.name}, {err}")
+            return None
+
+    async def async_connect(self, username: str, password: str,
+                            host: str | None = None, port: int = 0,
+                            timeout: float = 30.0, autodiscover: bool = False) -> ExtaLifeData:
         """Connect & authenticate to the controller using user and password parameters"""
-        self._host = host
-        self._user = user
-        self._password = password
 
-        # perform controller autodiscovery if no IP specified
-        if self._host is None or self._host == "":
-            future = await self._loop.run_in_executor(None, TCPAdapter.discover_controller)
-            self._host = future.result()
+        async def _async_connect_tcp(_host: str | None = None, _port: int = 0) -> ExtaLifeConn:
 
-        # check if still None after autodiscovery
-        if not self._host:
-            raise TCPConnError("Could not find controller IP via autodiscovery")
+            conn_params: ExtaLifeConnParams = ExtaLifeConnParams(_host, _port, self._loop)
+            conn_params.on_event_callback = self._async_do_conn_event_callback
 
-        conn_params = ConnectionParams(self._host, self._user, self._password, self._loop)
-        conn_params.on_connected_callback = self._async_do_tcp_connected_callback
-        conn_params.on_disconnected_callback = self._async_do_tcp_disconnected_callback
-        conn_params.on_notification_callback = self._async_do_tcp_notification_callback
+            tcp_conn = ExtaLifeConn(conn_params)
+            try:
+                await tcp_conn.async_connect(timeout)
+
+            except Exception as conn_err:
+                await tcp_conn.async_disconnect()
+                raise conn_err
+
+            return tcp_conn
 
         # init TCP adapter and try to connect
-        self._connection: TCPAdapter = TCPAdapter(conn_params)
+        try:
+            _LOGGER.debug(f"Connecting to controller using {"address " + host if host else "auto discovery procedure"}")
+            connection: ExtaLifeConn = await _async_connect_tcp(host, port)
+        except ExtaLifeConnError as err:
+            if host and autodiscover:
+                _LOGGER.debug(
+                    f"Connection to {host} failed. Probably device has changed its IP address. "
+                    "Will try to discover controller new IP address")
+                connection = await _async_connect_tcp()
+            else:
+                raise err
 
-        # connect and login - may raise TCPConnErr
-        _LOGGER.debug("Connecting to controller using IP: %s", self._host)
-        await self._connection.async_connect(timeout)
+        # now try to log in - may raise ExtaLifeConnError
+        try:
+            response: ExtaLifeResponse = await connection.async_login(username, password)
+        except ExtaLifeError as err:
+            await connection.async_disconnect()
+            raise err
 
-        resp = await self._connection.async_login()
-        # check response if login succeeded
-        if resp[0]["status"] != APIStatus.SUCCESS:
-            raise TCPConnError(resp)
-
-        # determine controller MAC as its unique identifier
-        if self._mac is None:
-            self._mac = await self.async_get_mac_address()
-
-        return True
+        return response[0]
 
     async def async_reconnect(self) -> None:
         """ Reconnect with existing connection parameters """
 
         try:
-            await self.async_connect(self._user, self._password, self._host, 10.0)
-        except TCPConnError as err:
-            _LOGGER.warning("Reconnect to EFC-01 at address %s failed. %s", self._host, err)
+            await self.async_connect(self.username, self.password, self.host, self.port, timeout=10.0)
+        except ExtaLifeConnError as err:
+            _LOGGER.warning(f"reconnect to EFC-01 at address {self.host} at port {self.port} failed, {err}")
 
-    async def async_get_config_details(self) -> dict[str, Any] | None:
-        cmd: ExtaLifeCmd = ExtaLifeCmd.GET_EFC_CONFIG_DETAILS
-        try:
-            resp = await self._connection.async_execute_command(cmd, None)
-            return resp[0].get("data")
+    async def async_disconnect(self) -> None:
+        """ Disconnect from the controller and stop message tasks """
+        if self._connection:
+            await self._connection.async_disconnect()
 
-        except TCPCmdError:
-            _LOGGER.error(f"Command {cmd.name} could not be executed")
-            return None
+    async def async_check_version(self, check_web: bool = False) -> ExtaLifeData | None:
+        # TODO: Missing one-liner
+        response = await self.async_exec_command(ExtaLifeCmd.CHECK_VERSION, {"check_web_version": check_web})
+        if response:
+            return response[0]
 
-    async def async_get_network_settings(self) -> dict[str, Any] | None:
+        return None
+
+    async def async_get_config_backup(self) -> ExtaLifeDataList | None:
+        # TODO: Missing one-liner
+        response = await self.async_exec_command(ExtaLifeCmd.DOWNLOAD_BACKUP)
+        if response:
+            result: ExtaLifeDataList = []
+            for frame in response.data:
+                if frame.get("data_element"):
+                    result.append(frame.copy())
+
+            if len(result):
+                return result
+
+        return None
+
+    async def async_get_config_details(self) -> ExtaLifeData | None:
+        # TODO: Missing one-liner
+        response = await self.async_exec_command(ExtaLifeCmd.GET_EFC_CONFIG_DETAILS)
+        if response:
+            return response[0]
+
+        return None
+
+    async def async_get_network_settings(self) -> ExtaLifeData | None:
         """ Executes command 102 to get network settings and controller name """
-
-        cmd: ExtaLifeCmd = ExtaLifeCmd.FETCH_NETWORK_SETTINGS
-        try:
-            resp = await self._connection.async_execute_command(cmd, None)
-            return resp[0].get("data")
-
-        except TCPCmdError:
-            _LOGGER.error(f"Command {cmd.name} could not be executed")
-            return None
+        response = await self.async_exec_command(ExtaLifeCmd.FETCH_NETWORK_SETTINGS)
+        if response:
+            return response[0]
 
     async def async_get_channels(self, include=(CHN_TYP_RECEIVERS, CHN_TYP_SENSORS, CHN_TYP_TRANSMITTERS,
-                                                CHN_TYP_EXTA_FREE_RECEIVERS)) -> list | None:
+                                                CHN_TYP_EXTA_FREE_RECEIVERS)) -> ExtaLifeDataList:
         """
         Get list of dicts of Exta Life channels consisting of native Exta Life TCP JSON
         data, but with transformed data model. Each channel will have native channel info
         AND device info. 2 channels of the same device will have the same device attributes
         """
-        cmd: ExtaLifeCmd = ExtaLifeCmd.NOOP
-        try:
-            channels = list()
-            if self.CHN_TYP_RECEIVERS in include:
-                cmd = ExtaLifeCmd.FETCH_RECEIVERS
-                resp = await self._connection.async_execute_command(cmd, None)
-                # here is where the magic happens - transform TCP JSON data into API channel representation
-                resp.extend(FAKE_RECEIVERS)
-                channels.extend(self._get_channels_int(resp))
 
-            if self.CHN_TYP_SENSORS in include:
-                cmd = ExtaLifeCmd.FETCH_SENSORS
-                resp = await self._connection.async_execute_command(cmd, None)
-                resp.extend(FAKE_SENSORS)
-                channels.extend(self._get_channels_int(resp))
+        channels = []
 
-            if self.CHN_TYP_TRANSMITTERS in include:
-                cmd = ExtaLifeCmd.FETCH_TRANSMITTERS
-                resp = await self._connection.async_execute_command(cmd, None)
-                channels.extend(self._get_channels_int(resp, dummy_ch=True))
+        async def _async_get_channels(command: ExtaLifeCmd,
+                                      dummy_channel: bool = False,
+                                      more_data: ExtaLifeDataList = None) -> None:
 
-            if self.CHN_TYP_EXTA_FREE_RECEIVERS in include:
-                cmd = ExtaLifeCmd.FETCH_EXTA_FREE
-                resp = await self._connection.async_execute_command(cmd, None)
-                channels.extend(self._get_channels_int(resp))
+            if self.is_connected:
+                response: ExtaLifeResponse = await self.async_exec_command(command)
+                if response:
+                    if isinstance(more_data, list):
+                        response.data.extend(more_data)
+                    channels.extend(self._transform_channels(response.data, dummy_channel))
 
-            return channels
+        if self.CHN_TYP_RECEIVERS in include:
+            await _async_get_channels(ExtaLifeCmd.FETCH_RECEIVERS, more_data=FAKE_RECEIVERS)
 
-        except TCPConnError as err:
-            _LOGGER.error("Command %s could not be executed, %s", cmd, err.data)
-            return None
+        if self.CHN_TYP_SENSORS in include:
+            await _async_get_channels(ExtaLifeCmd.FETCH_SENSORS, more_data=FAKE_SENSORS)
 
-        except TCPCmdError as err:
-            _LOGGER.error("Command %s could not be executed, %s", cmd, err.data)
-            return None
+        if self.CHN_TYP_TRANSMITTERS in include:
+            await _async_get_channels(ExtaLifeCmd.FETCH_TRANSMITTERS, True, more_data=FAKE_TRANSMITTERS)
 
-    async def async_execute_action(self, action, channel_id, **fields):
+        if self.CHN_TYP_EXTA_FREE_RECEIVERS in include:
+            await _async_get_channels(ExtaLifeCmd.FETCH_EXTA_FREE)
+
+        return channels
+
+    async def async_execute_action(self, action, channel_id, **fields) -> ExtaLifeData | None:
         """Execute action/command in controller
         action - action to be performed. See ACTION_* constants
         channel_id - concatenation of device id and channel number e.g. '1-1'
@@ -807,87 +1217,109 @@ class ExtaLifeAPI:
 
         Returns array of dicts converted from JSON or None if error occurred
         """
-        map_action_state = {
-            # Exta Life:
-            ExtaLifeAPI.ACTION_TURN_ON: 1,
-            ExtaLifeAPI.ACTION_TURN_OFF: 0,
-            ExtaLifeAPI.ACTION_OPEN: 1,
-            ExtaLifeAPI.ACTION_CLOSE: 0,
-            ExtaLifeAPI.ACTION_STOP: 2,
-            ExtaLifeAPI.ACTION_SET_POS: None,
-            ExtaLifeAPI.ACTION_SET_GATE_POS: 1,
-            ExtaLifeAPI.ACTION_SET_RGT_MODE_AUTO: 0,
-            ExtaLifeAPI.ACTION_SET_RGT_MODE_MANUAL: 1,
-            ExtaLifeAPI.ACTION_SET_TMP: 1,
-            # Exta Free:
-            ExtaLifeAPI.ACTION_EXTA_FREE_TURN_ON_PRESS: 1,
-            ExtaLifeAPI.ACTION_EXTA_FREE_TURN_ON_RELEASE: 2,
-            ExtaLifeAPI.ACTION_EXTA_FREE_TURN_OFF_PRESS: 3,
-            ExtaLifeAPI.ACTION_EXTA_FREE_TURN_OFF_RELEASE: 4,
-            ExtaLifeAPI.ACTION_EXTA_FREE_UP_PRESS: 1,
-            ExtaLifeAPI.ACTION_EXTA_FREE_UP_RELEASE: 2,
-            ExtaLifeAPI.ACTION_EXTA_FREE_DOWN_PRESS: 3,
-            ExtaLifeAPI.ACTION_EXTA_FREE_DOWN_RELEASE: 4,
-            ExtaLifeAPI.ACTION_EXTA_FREE_BRIGHT_UP_PRESS: 1,
-            ExtaLifeAPI.ACTION_EXTA_FREE_BRIGHT_UP_RELEASE: 2,
-            ExtaLifeAPI.ACTION_EXTA_FREE_BRIGHT_DOWN_PRESS: 3,
-            ExtaLifeAPI.ACTION_EXTA_FREE_BRIGHT_DOWN_RELEASE: 4,
-        }
         ch_id, channel = channel_id.split("-")
         ch_id = int(ch_id)
         channel = int(channel)
 
-        cmd_data = {
+        cmd: ExtaLifeCmd = ExtaLifeCmd.CONTROL_DEVICE
+        cmd_data: ExtaLifeData = {
             "id": ch_id,
             "channel": channel,
-            "state": map_action_state.get(action),
+            "state": ExtaLifeMap.action_to_state(action),
         }
         # this assumes the right fields are passed to the API
         cmd_data.update(**fields)
 
-        cmd: ExtaLifeCmd = ExtaLifeCmd.CONTROL_DEVICE
-        try:
-            resp = await self._connection.async_execute_command(cmd, cmd_data)
-            _LOGGER.debug("JSON response for command %s: %s", cmd, resp)
-            return resp
+        response = await self.async_exec_command(cmd, cmd_data)
+        if response:
+            return response[0]
 
-        except TCPCmdError as err:
-            # _LOGGER.error("Command %s could not be executed", cmd)
-            _LOGGER.exception(err)
-            return None
+        return None
 
-    async def async_restart(self) -> list[dict[str, Any]] | None:
+    async def async_restart(self) -> bool:
         """ Restart EFC-01 """
 
         cmd: ExtaLifeCmd = ExtaLifeCmd.RESTART
         try:
             cmd_data = dict()
 
-            resp = await self._connection.async_execute_command(cmd, cmd_data)
+            response = await self.async_exec_command(cmd, cmd_data)
+            _LOGGER.debug(f"JSON response for command {cmd.name}: {response.status.name}")
+            if response.status == ExtaLifeResponseStatus.SUCCESS:
+                return True
 
-            _LOGGER.debug("JSON response for command %s: %s", cmd, resp)
+        except ExtaLifeCmdError:
+            _LOGGER.error(f"Command {cmd.name} could not be executed")
 
-            return resp
-        except TCPCmdError:
-            _LOGGER.error("Command %s could not be executed", cmd)
+        return False
+
+    async def async_config_backup(self, path: str, schedule: str = "", retention: int = 0) -> None:
+        # TODO: Missing one-liner
+        from pathlib import Path
+
+        if not self.is_connected:
             return None
 
-    async def disconnect(self) -> None:
-        """ Disconnect from the controller and stop message tasks """
-        await self._connection.async_stop(True)
+        backup_data = await self.async_get_config_backup()
+        if backup_data:
+            schedule_name: str = self._config_backup_get_schedule_name(schedule=schedule)
+            file_base: str = self._config_backup_get_file_base(schedule=schedule)
+            try:
+                Path(path).mkdir(parents=True, exist_ok=True)
 
-    def set_notification_callback(self, notification_callback) -> None:
+                file_name: str = os.path.join(path, f"{file_base}.bak")
+                file_size: int = 0
+                size_total: int = 0
+
+                with open(file_name, "w+") as file:
+                    for backup_item in backup_data:
+                        file_size += file.write(f"{json.dumps(backup_item, separators=(',', ":"))}\n")
+                size_total += file_size
+                _LOGGER.debug(f"ConfigBackup: Wrote {file_size} byte(s) into '{file_name}'")
+
+                file_name: str = os.path.join(path, f"{file_base}.json")
+                file_size = 0
+                with open(file_name, "w+") as file:
+                    file_size += file.write(json.dumps(backup_data, indent=2))
+                size_total += file_size
+                _LOGGER.debug(f"ConfigBackup: Wrote {file_size} byte(s) into '{file_name}'")
+
+                self._config_backup_rotate(path, schedule_name, retention)
+                _LOGGER.debug(f"ConfigBackup: Created successfully, backup contains {size_total} byte(s)")
+
+            except OSError as err:
+                _LOGGER.error(f"ConfigBackup: config backup for '{file_base}' failed, {err}")
+
+        return None
+
+    async def async_config_restore(self, path: str) -> None:
+        # TODO: Missing one-liner
+        raise NotImplementedError()
+
+    def set_notification_callback(self, notification_callback: Callable[[ExtaLifeResponse], Awaitable]) -> None:
         """ update Notification callback assignment """
         self._on_notification_callback = notification_callback
 
     @property
-    def host(self) -> str | None:
+    def is_connected(self) -> bool:
+        """ Returns True or False depending of the connection is alive and user is logged on """
+        return self._connection is not None
+
+    @property
+    def host(self) -> str:
         return self._host
 
     @property
-    def is_connected(self) -> bool:
-        """ Returns True or False depending of the connection is alive and user is logged on """
-        return self._is_connected
+    def port(self) -> int:
+        return self._port
+
+    @property
+    def username(self) -> str:
+        return self._username
+
+    @property
+    def password(self) -> str:
+        return self._password
 
     @property
     def mac(self) -> str | None:
@@ -899,59 +1331,143 @@ class ExtaLifeAPI:
         return self._name
 
     @property
-    def sw_version(self) -> str:
-        return self._sw_version
+    def version_installed(self) -> str:
+        return self._version["installed"]
+
+    @property
+    def version_web(self) -> str:
+        return self._version["web"]
+
+    @property
+    def version_update(self) -> bool:
+        return self._version["update"]
+
+    @property
+    def version_beta(self) -> str:
+        return self._version["beta"]
 
     @property
     def network(self) -> dict[str, str]:
         return self._network
 
 
-class TCPConnError(Exception):
-    def __init__(self, data=None, previous=None):
+class ExtaLifeError(Exception):
+
+    def __init__(self) -> None:
         super().__init__()
-        self.data = data
-        self.error_code = None
-        self.previous = previous
-        if data:
-            data = data[-1].get("data") if isinstance(data[-1], dict) else None
-            self.error_code = None if not data else data.get("code")
+
+    def __str__(self) -> str:
+        return self.message
+
+    @property
+    def code(self) -> int:
+        raise NotImplementedError()
+
+    @property
+    def message(self) -> str:
+        raise NotImplementedError()
 
 
-class TCPCmdError(Exception):
-    def __init__(self, data=None):
+class ExtaLifeConnError(ExtaLifeError):
+
+    def __init__(self, message: str, code: int = 0) -> None:
+        """Empty constructor"""
         super().__init__()
-        self.data = data
-        self.error_code = None
-        if data:
-            data = data[-1].get("data") if isinstance(data[-1], dict) else None
-            self.error_code = None if not data else data.get("code")
+        self._message = message
+        self._code = code
+
+    @property
+    def code(self) -> int:
+        return self._code
+
+    @property
+    def message(self) -> str:
+        return f"{self._message if self._message else ""}"
 
 
-class ConnectionParams:
+class ExtaLifeDataError(ExtaLifeError):
 
-    def __init__(self, host: str, user: str, password: str, eventloop: AbstractEventLoop, keepalive: float = 8):
+    def __init__(self, message: str, code: int = 0) -> None:
+        """Empty constructor"""
+        super().__init__()
+        self._message = message
+        self._code = code
+
+    @property
+    def code(self) -> int:
+        return self._code
+
+    @property
+    def message(self) -> str:
+        return f"{self._message if self._message else ""}"
+
+
+class ExtaLifeCmdError(ExtaLifeError):
+
+    def __init__(self, response: ExtaLifeResponse) -> None:
+        super().__init__()
+        self._response = response
+
+    @property
+    def command(self) -> ExtaLifeCmd:
+        return self._response.command
+
+    @property
+    def code(self) -> ExtaLifeCmdErrorCode:
+        return self._response.error_code
+
+    @property
+    def message(self) -> str:
+        return (f"Command '{self.command.name}' failed. "
+                f"Error code {self.code}, {self._response.error_message}")
+
+
+class ExtaLifeConnParams:
+
+    EFC01_DEFAULT_PORT = 20400
+
+    @classmethod
+    def get_addr(cls, host: str, port: int) -> str:
+        result = host
+        if port != 0 and port != cls.EFC01_DEFAULT_PORT:
+            result += ":" + str(port)
+        return result
+
+    @classmethod
+    def get_host_and_port(cls, addr: str) -> Tuple[str, int]:
+        """split provided addr as host and port"""
+        port = cls.EFC01_DEFAULT_PORT
+        try:
+            host, port = addr.rsplit(":")
+            try:
+                port = int(port) if port else cls.EFC01_DEFAULT_PORT
+            except ValueError:
+                port = cls.EFC01_DEFAULT_PORT
+
+        except ValueError:
+            host = addr
+
+        if 0 >= port > 65535:
+            port = cls.EFC01_DEFAULT_PORT
+
+        return host, port
+
+    def __init__(self, host: str, port: int, eventloop: AbstractEventLoop, keepalive: float = 8):
+
         self._eventloop: AbstractEventLoop = eventloop
         self._host: str = host
-        self._user: str = user
-        self._password: str = password
+        self._port: int = port if (port > 0) and (port <= 65535) else self.EFC01_DEFAULT_PORT
         self._keepalive: float = keepalive
-        self.on_connected_callback: Callable[[], Awaitable] | None = None
-        self.on_disconnected_callback: Callable[[], Awaitable] | None = None
-        # TODO: APIResponse not dict[str, Any]
-        self.on_notification_callback: Callable[[dict[str, Any]], Awaitable] | None = None
+
+        self.on_event_callback: Callable[[ExtaLifeConnType, ExtaLifeEvent, Any], Awaitable] | None = None
 
     @property
     def host(self) -> str:
         return self._host
 
     @property
-    def user(self) -> str:
-        return self._user
-
-    @property
-    def password(self) -> str:
-        return self._password
+    def port(self) -> int:
+        return self._port
 
     @property
     def keepalive(self) -> float:
@@ -962,375 +1478,378 @@ class ConnectionParams:
         return self._eventloop
 
 
-class APIMessage:
-    def __init__(self, command: ExtaLifeCmd = ExtaLifeCmd.NOOP):
-        self.command: ExtaLifeCmd = command
-        self.data: dict[str, Any] = {"data": None}
+class ExtaLifeConn:
 
-
-class APIRequest(APIMessage):
-
-    def __init__(self, command: ExtaLifeCmd, data: dict[str, Any] | None = None) -> None:
-        super().__init__(command)
-        self.command = command
-        if data:
-            self.data = data
-
-    def as_dict(self):
-        return {"command": self.command, "data": self.data}
-
-    def as_json(self):
-        return json.dumps(self.as_dict())
-
-    def as_string(self) -> str:
-        return str(self.as_json()) if self.command != ExtaLifeCmd.NOOP else " "
-
-    def as_bytes(self) -> bytes:
-        return (self.as_string() + chr(3)).encode()
-
-
-class APIStatus(StrEnum):
-    SUCCESS = "success"
-    SEARCHING = "searching"
-    FAILURE = "failure"
-    PARTIAL = "partial"
-    NOTIFICATION = "notification"
-
-
-class APIResponse(APIMessage):
-
-    def __init__(self, json_obj: dict[str, Any]) -> None:
-        super().__init__(ExtaLifeCmd(json_obj.get("command")))
-        self._as_dict: dict[str, Any] = json_obj
-        self.data = json_obj.get("data")
-        self.status: APIStatus = APIStatus(json_obj.get("status"))
-
-    @classmethod
-    def from_json(cls, json_str: str) -> "APIResponse":
-        return APIResponse(json.loads(json_str[:-1]))
-
-    def as_dict(self) -> dict[str, Any]:
-        return self._as_dict
-
-
-class TCPAdapter:
+    class CloseSource(StrEnum):
+        CONNECT = "connect"
+        CONN_TASK = "conn_task"
+        DISCONNECT = "disconnect"
+        PING_TASK = "ping_task"
+        READ_TASK = "read_task"
+        REQUEST = "request"
 
     TCP_BUFF_SIZE = 8192
-    EFC01_PORT = 20400
 
-    _cmd_in_execution = False
+    def __init__(self, params: ExtaLifeConnParams) -> None:
 
-    def __init__(self, params: ConnectionParams) -> None:
+        self._eventloop: AbstractEventLoop = params.eventloop
+        self._host: str = params.host
+        self._port: int = params.port
 
-        self._params: ConnectionParams = params
-        self._connected: bool = False
-        self._stopped: bool = False
-        self._authenticated: bool = False
-        self._tcp_reader: asyncio.StreamReader | None = None     # type asyncio.StreamReader
-        self._tcp_writer: asyncio.StreamWriter | None = None     # type asyncio.StreamWriter
-        self._write_lock: asyncio.Lock = asyncio.Lock()
-        self._cmd_exec_lock: asyncio.Lock = asyncio.Lock()
-        self._running_task = None
+        self._local_addr: str = ""
+        self._local_port: int = -1
+        self._remote_addr: str = ""
+        self._remote_port: int = -1
+        self._keepalive: float = params.keepalive
+
+        self._on_event_callback: Callable[
+                                     [ExtaLifeConnType, ExtaLifeEvent, Any], Awaitable
+                                 ] | None = params.on_event_callback
+
+        self._username: str = ""
+        self._password: str = ""
+        self._tcp_reader: StreamReader | None = None
+        self._tcp_writer: StreamWriter | None = None
+        self._write_lock: Lock = Lock()
+        self._cmd_exec_lock: Lock = Lock()
         self._socket = None
-        self._socket_connected = False
-        self._ping_task = None
-        self._reader_task = None
+        self._ping_task: Task | None = None
+        self._read_task: Task | None = None
 
         self._tcp_last_write = datetime.now()
 
-        self._response_handlers: list[Callable[[APIResponse], None]] = []
+        self._response_handlers: list[Callable[[ExtaLifeResponse], None]] = []
 
-    def _start_ping(self) -> None:
-        """ Perform "smart" ping task. Send ping if nothing was sent to socket in the last keepalive-time period """
+    @staticmethod
+    def _check_success(response: ExtaLifeResponse, throw_error: bool = True) -> ExtaLifeResponse | None:
 
-        self._ping_task = self._params.eventloop.create_task(self._ping_())
+        if response.status == ExtaLifeResponseStatus.FAILURE:
+            if throw_error:
+                _LOGGER.error(f"ExtaLifeAPI cmd {response.command.name} FAILURE. "
+                              f"Code={response.error_code}, {response.error_message}")
+                raise ExtaLifeCmdError(response)
 
-    async def _ping_(self) -> None:
-        from datetime import datetime       # pylint disable=import-outside-toplevel
-        while self._connected:
-            last_write = (datetime.now() - self._tcp_last_write).seconds
+            _LOGGER.warning(f"ExtaLifeAPI cmd {response.command.name} FAILURE. "
+                            f"Code={response.error_code}, {response.error_message}")
+            return None
 
-            if last_write < self._params.keepalive:
-                period = self._params.keepalive - last_write
-                await asyncio.sleep(period)
-                continue
+        return response
 
-            if not self._connected:
-                break
+    async def _task_shutdown(
+            self, task_name: CloseSource, task: Task, close_source: CloseSource
+    ) -> None:
+
+        if task:
+            if task_name != close_source:
+                _LOGGER.debug(f"_task_shutdown[{self.host}:{close_source.name}] "
+                              f"task '{task_name.name}' requesting cancellation")
+                task.cancel()
 
             try:
-                await self.async_ping()
-            except TCPConnError:
-                _LOGGER.error("%s: Ping Failed!", self._params.host)
-                await self._async_on_error()
-                break
+                await task
+            except AsyncCancelledError:
+                _LOGGER.debug(f"_task_shutdown[{self.host}:{close_source.name}] "
+                              f"task '{task_name.name}' canceled")
+                pass
 
-        _LOGGER.debug("_ping_() - task ends")
+        return None
+
+    async def _async_do_event(self, event: ExtaLifeEvent, data: Any = None) -> None:
+        """Notify of event by calling provided callback"""
+
+        if self._on_event_callback is not None:
+            await self._on_event_callback(self, event, data)
+
+    async def _async_close(self, close_source: CloseSource) -> None:
+
+        if self._socket is None:
+            return
+
+        _LOGGER.debug(f"_async_close[{self.host}:{close_source.name}]: closing connection")
+
+        self._ping_task = await self._task_shutdown(ExtaLifeConn.CloseSource.PING_TASK, self._ping_task, close_source)
+        self._read_task = await self._task_shutdown(ExtaLifeConn.CloseSource.READ_TASK, self._read_task, close_source)
+
+        async with self._write_lock:
+            if not self._socket:
+                _LOGGER.debug(f"_async_close[{self.host}:{close_source.name}]: connection already closed")
+                # socket could be released during awaiting on lock. if so just return
+                return
+
+            self._local_addr = ""
+            self._local_port = -1
+            self._remote_addr = ""
+            self._remote_port = -1
+
+            if self._tcp_writer:
+                self._tcp_writer.close()
+                self._tcp_writer = None
+
+            self._tcp_reader = None
+
+            self._socket.close()
+            self._socket = None
+
+        _LOGGER.debug(f"_async_close[{self.host}:{close_source.name}]: connection closed")
+
+        should_reconnect = False if close_source == ExtaLifeConn.CloseSource.DISCONNECT else True
+        await self._async_do_event(ExtaLifeEvent.DISCONNECTED, should_reconnect)
+
+    async def _async_read_task(self) -> None:
+
+        _LOGGER.debug(f"_async_read_task[{self.host}]: STARTED")
+        try:
+            while True:
+                response_raw: bytes = (await self._tcp_reader.readuntil(chr(3).encode()))[:-1]
+                response_str: str = response_raw.decode()
+
+                response: ExtaLifeResponse = ExtaLifeResponse(response_str)
+                _LOGGER.debug(f"<<< [Cmd={response.command.name}] {response_str}")
+
+                # pass only status change notifications to registered listeners
+                if response.status == ExtaLifeResponseStatus.NOTIFICATION:
+                    await self._async_do_event(ExtaLifeEvent.NOTIFICATION, response)
+                # else:
+                for response_handler in self._response_handlers[:]:
+                    response_handler(response)
+
+        except AsyncCancelledError:
+            _LOGGER.debug(f"_async_read_task[{self.host}]: CANCELLED")
+            pass
+
+        except Exception as err:
+            self._read_task = None
+            _LOGGER.error(f"_async_read_task[{self.host}]: FAILURE - error while reading incoming messages, {str(err)}")
+            await self._async_close(ExtaLifeConn.CloseSource.READ_TASK)
+
+        finally:
+            _LOGGER.debug(f"_async_read_task[{self.host}]: FINISHED")
+
+    async def _async_ping_task(self) -> None:
+        """Perform dummy data posting to connected controller"""
+
+        _LOGGER.debug(f"_async_ping_task[{self.host}]: STARTED")
+        try:
+            while True:
+                last_write = (datetime.now() - self._tcp_last_write).seconds
+                if last_write < self._keepalive:
+                    period = self._keepalive - last_write
+                    await asyncio.sleep(period)
+                else:
+                    await self.async_post_command(ExtaLifeCmd.NOOP)
+
+        except AsyncCancelledError:
+            _LOGGER.debug(f"_async_ping_task[{self.host}]: CANCELLED")
+
+        except Exception as err:
+            _LOGGER.error(f"_async_ping_task[{self.host}]: FAILURE - error while pinging controller, {str(err)}")
+            await self._async_close(ExtaLifeConn.CloseSource.PING_TASK)
+
+        finally:
+            _LOGGER.debug(f"_async_ping_task[{self.host}]: FINISHED")
 
     async def _async_post_data(self, data: bytes) -> None:
-        from datetime import datetime
-        if not self._socket_connected:
-            raise TCPConnError("Socket is not connected")
+
+        if self._socket is None:
+            raise ExtaLifeConnError(f"_async_post_data[{self.host}]: host is not connected")
+
         try:
             async with self._write_lock:
                 self._tcp_writer.write(data)
                 self._tcp_last_write = datetime.now()
                 await self._tcp_writer.drain()
         except OSError as err:
-            await self._async_on_error()
-            raise TCPConnError("Error while writing data: {}".format(err)) from None
+            await self._async_close(ExtaLifeConn.CloseSource.REQUEST)
+            raise ExtaLifeConnError(f"post_data failed, {err}", err.errno) from None
 
-    async def async_post_request(self, request: APIRequest) -> None:    # pylint disable=raise-missing-from
+    async def _async_post_request(self, request: ExtaLifeRequest) -> None:
 
-        request_data = request.as_bytes()
+        request_data = request.to_bytes()
         request_str = str(request_data)
         if request.command == ExtaLifeCmd.LOGIN and not ExtaLifeAPI.is_debugger_active():
             request_str = re.sub(r'"password":\s*"[^"]*"', '"password": "********"', request_str)
-        _LOGGER.debug(">>> [Cmd=%s] %s", request.command.name, request_str)
+        _LOGGER.debug(f">>> [Cmd={request.command.name}] {request_str}")
 
         await self._async_post_data(request_data)
 
-    # TODO: APIResponse not dict[str, Any]
-    async def async_send_request(self, request: APIRequest,
-                                 timeout: float = 30.0) -> list[dict[str, Any]]:
+    async def _async_send_request(self, request: ExtaLifeRequest, timeout: float = 3.0) -> list[ExtaLifeResponse]:
         """ Send message to controller and await response """
+
         # prevent controller overloading and command loss - wait until finished (lock released)
         async with self._cmd_exec_lock:
-            fut = self._params.eventloop.create_future()
-            responses = []
 
-            def on_message(response: APIResponse) -> None:
+            responses: list[ExtaLifeResponse] = []
+            response_reader = self._eventloop.create_future()
+            last_response = datetime.now().timestamp()
 
-                if fut.done() or response.command != request.command:
+            def on_response(response: ExtaLifeResponse) -> None:
+
+                nonlocal last_response
+
+                if response_reader.done() or response.command != request.command:
                     return
 
-                _LOGGER.debug("on_message(), response for %s, status %s", response.command.name, response.status.name)
+                if response.status in ExtaLifeResponseStatus.NOTIFICATION:
+                    last_response = datetime.now().timestamp()
 
-                if response.status == APIStatus.SEARCHING:
-                    responses.append(response.as_dict())
-                elif response.status in (APIStatus.SUCCESS, APIStatus.FAILURE, APIStatus.PARTIAL):
-                    responses.append(response.as_dict())
-                    fut.set_result(responses)
+                elif response.status in (ExtaLifeResponseStatus.SEARCHING,
+                                         ExtaLifeResponseStatus.PARTIAL,
+                                         ExtaLifeResponseStatus.PROGRESS):
+                    last_response = datetime.now().timestamp()
+                    responses.append(response)
 
-            self._response_handlers.append(on_message)
-            await self.async_post_request(request)
+                elif response.status in (ExtaLifeResponseStatus.SUCCESS, ExtaLifeResponseStatus.FAILURE):
+                    responses.append(response)
+                    response_reader.set_result(responses)
+
+            self._response_handlers.append(on_response)
+            await self._async_post_request(request)
+
+            while True:
+                try:
+                    await asyncio.wait_for(response_reader, timeout)
+                    break
+
+                except AsyncTimeoutError:
+                    now_timeout = datetime.now().timestamp()
+                    if (now_timeout - last_response) - 0.3 > timeout:
+                        await self._async_close(ExtaLifeConn.CloseSource.REQUEST)
+                        raise ExtaLifeConnError("send_request failed, timeout while waiting for API response") from None
+                    else:
+                        response_reader = self._eventloop.create_future()
 
             try:
-                await asyncio.wait_for(fut, timeout)
-
-            except asyncio.TimeoutError:
-                if self._stopped:
-                    raise TCPConnError("Disconnected while waiting for API response!") from None
-                await self._async_on_error()
-                raise TCPConnError("Timeout while waiting for API response!") from None
-
-            try:
-                self._response_handlers.remove(on_message)                          # pylint: disable=raise-missing-from
+                self._response_handlers.remove(on_response)
             except ValueError:
                 pass
 
             return responses
 
-    async def async_post_command(self, command: ExtaLifeCmd, data: dict[str, any] | None = None) -> None:
-        await self.async_post_request(APIRequest(command, data))
+    async def async_post_command(self, command: ExtaLifeCmd, data: ExtaLifeData | None = None) -> None:
+        await self._async_post_request(ExtaLifeRequest(command, data))
 
-    async def async_execute_command(self,
-                                    command: ExtaLifeCmd,
-                                    data: dict[str, any] | None = None) -> list[dict[str, Any]]:
+    async def async_exec_command(self, command: ExtaLifeCmd, data: ExtaLifeData | None = None) -> ExtaLifeResponse:
 
-        response = await self.async_send_request(APIRequest(command, data))
+        request = ExtaLifeRequest(command, data)
+        responses = await self._async_send_request(request)
+        if len(responses) == 0:
+            raise ExtaLifeConnError("exec_command failed, no response received from Controller")
 
-        if len(response) == 0:
-            raise TCPConnError("No response received from Controller!")
+        return ExtaLifeResponse(responses, request)
 
-        return response
-
-    async def _async_recv(self) -> bytes:
-
-        try:
-            result = await self._tcp_reader.readuntil(chr(3).encode())
-        except (asyncio.IncompleteReadError, OSError, TimeoutError) as err:
-            raise TCPConnError("Error while receiving data: {}".format(err)) from err
-
-        return result
-
-    def _check_connected(self) -> None:
-        if not self._connected:
-            raise TCPConnError("Not connected!")
-
-    async def _close_socket(self) -> None:
-        _LOGGER.debug("entering _close_socket()")
-
-        if not self._socket_connected:
-            return
-        async with self._write_lock:
-            self._tcp_writer.close()
-            self._tcp_writer = None
-            self._tcp_reader = None
-        if self._socket is not None:
-            self._socket.close()
-
-        self._socket_connected = False
-        self._connected = False
-        self._authenticated = False
-        _LOGGER.debug("%s: Closed socket", self._params.host)
-
-    async def async_connect(self, timeout: float = 30.0):
-        """
-        Connect to EFC-01 via TCP socket
-        """
-        if self._stopped:
-            raise TCPConnError("Connection is closed!")
-        if self._connected:
-            raise TCPConnError("Already connected!")
+    async def async_connect(self, timeout: float = 30.0) -> None:
+        """Connect to EFC-01 via TCP socket"""
+        if self.connected:
+            raise ExtaLifeConnError("ExtaLifeConn async_connect failed, already connected")
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.setblocking(False)
         self._socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
-        _LOGGER.debug("Connecting to %s:%s", self._params.host,
-                      self.EFC01_PORT, )
+        if not self._host:
+            # if host is empty we should activate discovery action
+            self._host = await self._eventloop.run_in_executor(None, ExtaLifeConn.discover_controller)
+            if not self._host:
+                self._socket = None
+                raise ExtaLifeConnError("Failed to discover controller on local network")
+            # if host was found we change connection port to default EFC-01 port (20400)
+            self._port = ExtaLifeConnParams.EFC01_DEFAULT_PORT
+
+        _LOGGER.debug(f"Trying to connect to {self.host} at port {self.port}")
         try:
-            coro = self._params.eventloop.sock_connect(self._socket, (self._params.host, self.EFC01_PORT))
+            coro = self._eventloop.sock_connect(self._socket, (self.host, self.port))
             await asyncio.wait_for(coro, timeout)
+
+        except TimeoutError as err:
+            await self._async_close(ExtaLifeConn.CloseSource.CONNECT)
+            raise ExtaLifeConnError(f"Unable to connect {self.host}, connection timed out") from err
+
         except OSError as err:
-            await self._async_on_error()
-            raise TCPConnError(
-                "Error connecting to {}: {}".format(self._params.host, err), previous=err) from err
-        except asyncio.TimeoutError as err:
-            await self._async_on_error()
-            raise TCPConnError(
-                "Timeout while connecting to {}".format(self._params.host)) from err
+            await self._async_close(ExtaLifeConn.CloseSource.CONNECT)
+            raise ExtaLifeConnError(f"Unable to connect {self.host}, connection refused") from err
 
-        _LOGGER.debug("%s: Opened socket for", self._params.host)
+        self._local_addr, self._local_port = self._socket.getsockname()
+        self._remote_addr, self._remote_port = self._socket.getpeername()
+
         self._tcp_reader, self._tcp_writer = await asyncio.open_connection(sock=self._socket)
-        self._socket_connected = True
 
-        # should await but this never return
-        self._reader_task = self._params.eventloop.create_task(self.async_run_forever())
+        self._read_task = self._eventloop.create_task(self._async_read_task())
+        self._ping_task = self._eventloop.create_task(self._async_ping_task())
 
-        _LOGGER.debug("Successfully connected ")
+        _LOGGER.debug(f"async_connect[{self.host}] successfully connected ({self._local_addr}:{self._local_port} <==> "
+                      f"{self._remote_addr}:{self._remote_port})")
 
-        self._connected = True
-
-        self._start_ping()
-
-    async def async_ping(self) -> None:
-        """Perform dummy data posting to connected controller"""
-        self._check_connected()
-        await self.async_post_command(ExtaLifeCmd.NOOP)
-
-    # TODO: APIResponse not list
-    async def async_login(self) -> list[dict[str, Any]]:
+    async def async_login(self, username: str, password: str) -> ExtaLifeResponse | None:
         """
         Try to log on via command: 1
         return json dictionary with result or exception in case of connection or logon
         problem
         """
+        if not self.connected:
+            raise ExtaLifeConnError("async_login, not connected")
+        if self.authenticated:
+            raise ExtaLifeConnError("async_login, user already logged in")
 
-        self._check_connected()
-        if self._authenticated:
-            raise TCPConnError("Already logged in!")
+        pwd = password if ExtaLifeAPI.is_debugger_active() else "*" * len(password)
+        _LOGGER.debug(f"logging in... [user: '{username}', password: '{pwd}']")
 
-        _LOGGER.debug("Logging in... [user: %s, password: %s]",
-                      self._params.user, "*" * len(self._params.password))
-        cmd_data = {
-            "password": self._params.password,
-            "login": self._params.user
-        }
-        resp_js = await self.async_execute_command(ExtaLifeCmd.LOGIN, cmd_data)
+        cmd_data = {"password": password, "login": username}
 
-        if resp_js[0].get("status") == "failure" and resp_js[0].get("data").get("code") == -2:
-            # pass
-            raise TCPConnError("Invalid password!")
+        response = self._check_success(await self.async_exec_command(ExtaLifeCmd.LOGIN, cmd_data))
 
-        self._authenticated = True
+        _LOGGER.debug(f"user '{username}' authenticated")
+        self._username = username
+        self._password = password
 
-        _LOGGER.debug("Authenticated")
+        await self._async_do_event(ExtaLifeEvent.CONNECTED, self)
 
-        await self._async_do_connected()
+        return response
 
-        return resp_js
+    async def async_disconnect(self) -> None:
+        await self._async_close(ExtaLifeConn.CloseSource.DISCONNECT)
 
-    async def async_run_forever(self) -> None:
-        _LOGGER.debug("Starting TCPAdapter reader")
-        while True:
-            try:
-                await self._async_run_once()
-            except TCPConnError as err:
-                _LOGGER.warning("Error while reading incoming messages: %s", err.data)
-                await self._async_on_error()
-                break
-            except Exception as err:  # pylint: disable=broad-except
-                _LOGGER.warning("Unexpected error while reading incoming messages: %s", err)
-                await self._async_on_error()
-                break
+    @property
+    def authenticated(self) -> bool:
+        return self._username != ""
 
-        _LOGGER.debug("async_run_forever() - task ends")
+    @property
+    def connected(self) -> bool:
+        return self._socket is not None
 
-    async def _async_run_once(self) -> None:
+    @property
+    def host(self) -> str:
+        return self._host
 
-        message_raw = await self._async_recv()
+    @property
+    def port(self) -> int:
+        return self._port
 
-        message_str = message_raw.decode()
+    @property
+    def username(self) -> str:
+        return self._username
 
-        response: APIResponse = APIResponse.from_json(message_str)
-        _LOGGER.debug("<<< [Cmd=%s] %s", response.command.name, message_str)
+    @property
+    def password(self) -> str:
+        return self._password
 
-        for response_handler in self._response_handlers[:]:
-            response_handler(response)
+    @property
+    def local_addr(self) -> str:
+        return self._local_addr
 
-        # pass only status change notifications to registered listeners
-        if response.status == APIStatus.NOTIFICATION and self._params.on_notification_callback is not None:
-            await self._params.on_notification_callback(response.as_dict())
+    @property
+    def local_port(self) -> int:
+        return self._local_port
 
-    async def _async_on_error(self) -> None:
-        await self.async_stop(force=True)
+    @property
+    def remote_addr(self) -> str:
+        return self._remote_addr
 
-    async def async_stop(self, force: bool = False) -> None:
-        _LOGGER.debug("async_stop() self._stopped: %s", self._stopped)
-        if self._stopped and not force:
-            return
-
-        self._stopped = True
-        if self._running_task is not None:
-            self._running_task.cancel()
-            self._running_task = None
-
-        if self._ping_task is not None:
-            self._ping_task.cancel()
-            try:
-                await self._ping_task
-            except asyncio.CancelledError as err:
-                _LOGGER.debug("ping_task has been canceled, %s", err)
-                pass
-            self._ping_task = None
-
-        if self._reader_task is not None:
-            self._reader_task.cancel()
-            try:
-                await self._reader_task
-            except asyncio.CancelledError as err:
-                _LOGGER.debug("reader_task has been canceled, %s", err)
-                pass
-            self._reader_task = None
-
-        await self._close_socket()
-
-        await self._async_do_disconnected()
-
-    async def _async_do_connected(self):
-        """ Notify of (re)connection by calling provided callback """
-        if self._params.on_connected_callback is not None:
-            await self._params.on_connected_callback()
-
-    async def _async_do_disconnected(self):
-        """ Notify of lost connection by calling provided callback """
-        if self._params.on_disconnected_callback is not None:
-            await self._params.on_disconnected_callback()
+    @property
+    def remote_port(self) -> int:
+        return self._remote_port
 
     @staticmethod
-    def discover_controller():
+    def discover_controller() -> str:
         """
         Perform controller autodiscovery using UDP query
         return IP as string or false if not found
@@ -1350,8 +1869,8 @@ class TCPAdapter:
             sock.bind(server_address)
         except socket.error:
             sock.close()
-            _LOGGER.error("Could not connect to receive UDP multicast from EFC-01 on port %s", multicast_port)
-            return None
+            _LOGGER.error(f"Could not connect to receive UDP multicast from EFC-01 on port {multicast_port}")
+            return ""
 
         # Tell the operating system to add the socket to the multicast group
         # on all interfaces (join multicast group)
@@ -1364,11 +1883,12 @@ class TCPAdapter:
             (data, address) = sock.recvfrom(1024)
         except socket.error:
             sock.close()
-            return None
+            return ""
         sock.close()
 
         _LOGGER.debug("Got multicast response from EFC-01: %s", str(data.decode()))
 
-        if data == b'{"status":"broadcast","command":0,"data":null}\x03':
+        response = ExtaLifeResponse(data.decode())
+        if response.status == ExtaLifeResponseStatus.BROADCAST and response.command == ExtaLifeCmd.NOOP:
             return address[0]  # return IP - array[0]; array[1] is sender's port
-        return None
+        return ""

@@ -9,13 +9,14 @@ ExtaLifeTransmitterEventProcessorType = "ExtaLifeTransmitterEventProcessor"
 ExtaLifeControllerType = "ExtaLifeController"
 
 if TYPE_CHECKING:
+    from .core import Core
     from .device import Device, DeviceManager
     from ..transmitter import TransmitterManager
     from .. import (
         ChannelDataManager,
         ExtaLifeController
     )
-    from .core import Core
+
     DeviceType = Device
     DeviceManagerType = DeviceManager
     TransmitterManagerType = TransmitterManager

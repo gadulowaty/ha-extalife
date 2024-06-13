@@ -12,8 +12,9 @@ from typing import (
 
 import homeassistant.helpers.config_validation as cv
 
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity import (
+    Entity,
+)
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import (
  device_registry as dr,
@@ -29,14 +30,25 @@ from homeassistant.components.binary_sensor import DOMAIN as DOMAIN_BINARY_SENSO
 from homeassistant.components.climate import DOMAIN as DOMAIN_CLIMATE
 from homeassistant.components.cover import DOMAIN as DOMAIN_COVER
 from homeassistant.components.sensor import DOMAIN as DOMAIN_SENSOR
+from homeassistant.components.update import DOMAIN as DOMAIN_UPDATE
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.exceptions import (
+    ConfigEntryNotReady,
+    ConfigEntryAuthFailed,
+)
 
 from .pyextalife import (
     ExtaLifeAPI,
+    ExtaLifeConn,
+    ExtaLifeConnParams,
+    ExtaLifeData,
+    ExtaLifeDataList,
     ExtaLifeDeviceModel,
     ExtaLifeDeviceModelName,
-    ExtaLifeDeviceInfo,
-    TCPConnError,
+    ExtaLifeMap,
+    ExtaLifeError,
+    ExtaLifeConnError,
+    ExtaLifeCmdError,
     DEVICE_ARR_ALL_SWITCH,
     DEVICE_ARR_ALL_LIGHT,
     DEVICE_ARR_ALL_COVER,
@@ -57,7 +69,7 @@ from .pyextalife import (
 from .helpers.const import (
     DOMAIN,
     CONF_CONTROLLER_IP,
-    CONF_USER,
+    CONF_USERNAME,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     DEFAULT_POLL_INTERVAL,
@@ -70,7 +82,6 @@ from .helpers.const import (
     OPTIONS_LIGHT,
     OPTIONS_LIGHT_ICONS_LIST,
     OPTIONS_COVER,
-    OPTIONS_COVER_INV_CONTROL,
     OPTIONS_GENERAL,
     OPTIONS_GENERAL_POLL_INTERVAL,
     OPTIONS_GENERAL_DISABLE_NOT_RESPONDING,
@@ -104,7 +115,7 @@ OPTIONS_CONF_SCHEMA = {
     },
     vol.Optional(OPTIONS_COVER, default=OPTIONS_DEFAULTS[OPTIONS_COVER]): {
         vol.Optional(
-            OPTIONS_COVER_INV_CONTROL,
+            OPTIONS_COVER_INVERTED_CONTROL,
             default=OPTIONS_DEFAULTS[OPTIONS_COVER][OPTIONS_COVER_INVERTED_CONTROL],
         ): cv.boolean,
     },
@@ -116,7 +127,7 @@ CONFIG_SCHEMA = vol.Schema(
         DOMAIN: vol.Schema(
             {
                 vol.Optional(CONF_CONTROLLER_IP, default=""): cv.string,
-                vol.Required(CONF_USER): cv.string,
+                vol.Required(CONF_USERNAME): cv.string,
                 vol.Required(CONF_PASSWORD): cv.string,
                 vol.Optional(
                     CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL
@@ -253,83 +264,58 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
         if options_def != options or not config_entry.options:
             hass.config_entries.async_update_entry(config_entry, options=options_def)
 
-    async def api_connect(conn_user: str, conn_password: str, conn_host: str | None) -> ExtaLifeAPI:
-        el_controller = Core.get(config_entry.entry_id).api
-        await el_controller.async_connect(conn_user, conn_password, host=conn_host)
-        return el_controller
-
     init_options()
 
-    controller = None
-
-    el_conf = config_entry.data
     core = Core.get(config_entry.entry_id)
 
-    data_manager: ChannelDataManager = core.data_manager
+    controller = core.api
+    username = config_entry.data[CONF_USERNAME]
+    password = config_entry.data[CONF_PASSWORD]
+    controller_ip: str = config_entry.data[CONF_CONTROLLER_IP]
 
-    controller_ip: str = el_conf[CONF_CONTROLLER_IP]  # will be known after config flow
+    _LOGGER.info("ExtaLife initializing '%s'... [Debugger attached: %s]",
+                 config_entry.title, "YES" if ExtaLifeAPI.is_debugger_active() else "NO")
 
+    if controller_ip:
+        _LOGGER.debug("Trying to connect to controller using IP: %s", controller_ip)
+        controller_host, controller_port = ExtaLifeConnParams.get_host_and_port(controller_ip)
+        autodiscover: bool = False
+    else:
+        _LOGGER.info("Controller IP is not specified. Will use autodiscovery mode")
+        controller_host = ""
+        controller_port = 0
+        autodiscover: bool = True
+
+    # try to connect and logon to controller
     try:
-        _LOGGER.info("ExtaLife initializing '%s'... [Debugger attached: %s]",
-                     config_entry.title, "YES" if ExtaLifeAPI.is_debugger_active() else "NO")
+        await controller.async_connect(username, password, controller_host, controller_port,
+                                       timeout=5.0, autodiscover=autodiscover)
 
-        if controller_ip is not None:
-            _LOGGER.debug("Trying to connect to controller using IP: %s", controller_ip)
+    except ExtaLifeError as err:
+        if isinstance(err, ExtaLifeCmdError):
+            raise ConfigEntryAuthFailed(err.message)
         else:
-            _LOGGER.info("No controller IP specified. Trying autodiscovery mode")
+            _LOGGER.error(f"Unable to connect to EFC-01 @ {controller_ip}, {err.message}")
+            raise ConfigEntryNotReady
 
-        # get instance: this will already try to connect and logon
-        try:
-            controller = await api_connect(
-                el_conf[CONF_USER], el_conf[CONF_PASSWORD], controller_ip
-            )
-        except TCPConnError as e:           # pylint: disable=invalid-name
-            _LOGGER.debug(
-                "Connection exception: %s, class: %s", e.previous, e.previous.__class__
-            )
-            # invalid IP / IP changed? - try auto-detection
-            if isinstance(e.previous, OSError) and e.previous.errno == 113:
-                _LOGGER.warning(
-                    "Could not connect to EFC-01 on IP stored in configuration: %s. "
-                    "Trying to discover controller IP in the network",
-                    controller_ip,
-                )
-                # controller = await hass.async_add_executor_job(api_connect, el_conf[CONF_USER],
-                # el_conf[CONF_PASSWORD], None)
-                controller = await api_connect(
-                    el_conf[CONF_USER], el_conf[CONF_PASSWORD], None
-                )
+        # await core.unload_entry_from_hass()
+        # return False
 
-                # update ConfigEntry with new IP
-                cur_data = {**config_entry.data}
-                cur_data.update({CONF_CONTROLLER_IP: controller.host})
-                hass.config_entries.async_update_entry(config_entry, data=cur_data)
-                _LOGGER.info("Controller IP updated to: %s", controller.host)
-            else:
-                raise e
-        _LOGGER.info("Connected to controller on IP: %s", controller.host)
+    if controller_ip is None or (controller.host != controller_host) or (controller.port != controller_port):
+        # passed controller ip has changed during autodiscovery
+        # should store new controller.host to HA configuration
+        cur_data = {**config_entry.data}
+        cur_data.update({CONF_CONTROLLER_IP: ExtaLifeConnParams.get_addr(controller.host, controller.port)})
+        hass.config_entries.async_update_entry(config_entry, data=cur_data)
+        _LOGGER.info("Controller IP updated to: %s", controller.host)
 
-        sw_version = controller.sw_version
-
-        if sw_version is not None:
-            _LOGGER.info("EFC-01 Software version: %s", sw_version)
-        else:
-            _LOGGER.error(
-                "Error communicating with the EFC-01 controller. Return data %s",
-                sw_version,
-            )
-            return False
-
-    except TCPConnError as err:
-        host = controller.host if (controller and controller.host) else "unknown"
-        _LOGGER.error("Could not connect to EFC-01 on IP: %s", host)
-
-        await core.unload_entry_from_hass()
-        raise ConfigEntryNotReady from err
+    if controller.version_installed is not None:
+        _LOGGER.info(f"EFC-01 Software version: {controller.version_installed}")
+    else:
+        _LOGGER.error("Error communicating with the EFC-01 controller.")
+        return False
 
     await core.register_controller()
-
-    await data_manager.async_execute_status_polling(True)
 
     # publish services to HA service registry
     await core.async_register_services()
@@ -351,7 +337,7 @@ class ChannelDataManager:
         self.channels_indx = {}
         self.initial_channels = {}
 
-        self._poller_callback_remove: Callable[[], None] | None = None
+        self._polling_task_remove: Callable[[], None] | None = None
 
     @property
     def core(self) -> Core:
@@ -359,18 +345,16 @@ class ChannelDataManager:
 
     @property
     def controller(self) -> ExtaLifeAPI:
-        return Core.get(self._config_entry.entry_id).api
+        return self.core.api
 
-    # callback
-    # TODO: APIResponse not dict[str, Any]
-    def on_notify(self, message: dict[str, Any]):
-        _LOGGER.debug("Received status change notification from controller: %s", message)
-        data = message.get("data")
+    def on_notify(self, data: ExtaLifeData) -> None:
+        _LOGGER.debug(f"Received status change notification from controller: {data}")
+
         channel = data.get("channel", "#")
         channel_id = str(data.get("id")) + "-" + str(channel)
 
         # inform HA entity of state change via notification
-        signal = ExtaLifeChannel.get_notif_upd_signal(channel_id)
+        signal = ExtaLifeChannel.signal_get_id_for_notification(channel_id)
         if channel != "#":
             self.core.async_signal_send(signal, data)
         else:
@@ -382,50 +366,40 @@ class ChannelDataManager:
 
         self.channels_indx.update({channel_id: channel_data})
 
-    async def async_execute_status_polling(self, poll_now: bool = True) -> None:
+    async def async_polling_task_execute(self, poll_now: bool = True, poll_periodic: bool = True) -> None:
         """Executes status polling triggered externally, not via periodic callback + resets next poll time"""
 
-        if self._poller_callback_remove is not None:
-            self._poller_callback_remove()
-        self._poller_callback_remove = None
+        self.polling_task_stop()
 
         if poll_now:
-            await self._async_update_callback()
+            await self._async_polling_task()
 
-        self.setup_periodic_callback()
+        if poll_periodic:
+            self.polling_task_configure()
 
-    async def async_stop_polling(self) -> None:
-        """Turn off periodic callbacks for status update"""
-
-        if self._poller_callback_remove is not None:
-            self._poller_callback_remove()
-        self._poller_callback_remove = None
-
-    async def _async_update_callback(self, now: datetime = None) -> None:
+    async def _async_polling_task(self, now: datetime = None) -> None:
         """Get the latest device&channel status data from EFC-01.
         This method is called from HA task scheduler via async_track_time_interval"""
 
-        _LOGGER.debug("Executing EFC-01 status polling")
+        _LOGGER.debug(f"[{self.core.config_entry.title}] Executing EFC-01 status polling")
         # use Exta Life TCP communication class
 
         # if connection error or other - will receive None
         # otherwise it contains a list of channels
         channels = await self.controller.async_get_channels()
 
-        if channels is None:
-            _LOGGER.warning("No Channels could be obtained from the controller")
+        if channels is None or len(channels) == 0:
+            _LOGGER.warning(f"[{self.core.config_entry.title}] No Channels could be obtained from the controller")
             return
 
         # create indexed access: dict from list element
         # dict key = "data" section
-        for elem in channels:
-            self.update_channel(elem["id"], elem["data"])
+        for channel in channels:
+            self.update_channel(channel["id"], channel["data"])
 
         self.core.async_signal_send(SIGNAL_DATA_UPDATED)
 
-        _LOGGER.debug(
-            "Exta Life: status for %d devices updated", len(self.channels_indx)
-        )
+        _LOGGER.debug(f"[{self.core.config_entry.title}] Status for {len(self.channels_indx)} devices updated")
 
         await self.async_discover_devices()
 
@@ -434,18 +408,26 @@ class ChannelDataManager:
             # store only for the 1st call (by setup code, not by HA)
             self.initial_channels = self.channels_indx.copy()
 
-    def setup_periodic_callback(self) -> None:
+    def polling_task_stop(self) -> None:
+        """Stop status polling task scheduler"""
+        if self._polling_task_remove is not None:
+            self._polling_task_remove()
+            _LOGGER.debug(f"Polling task has been removed")
+        self._polling_task_remove = None
+
+    def polling_task_configure(self) -> None:
         """(Re)set periodic callback period based on options"""
+
+        self.polling_task_stop()
 
         # register callback for periodic status update polling + device discovery
         interval = self._config_entry.options.get(OPTIONS_GENERAL).get(
             OPTIONS_GENERAL_POLL_INTERVAL
         )
 
-        _LOGGER.debug("setup_periodic_callback(). Setting interval: %s", interval)
-
-        self._poller_callback_remove = self.core.async_track_time_interval(
-            self._async_update_callback, timedelta(minutes=interval)
+        _LOGGER.debug(f"Periodic poll task interval has been set to {interval} minute(s)")
+        self._polling_task_remove = self.core.async_track_time_interval(
+            self._async_polling_task, timedelta(minutes=interval)
         )
 
     async def async_discover_devices(self) -> None:
@@ -505,21 +487,31 @@ class ChannelDataManager:
                 continue
 
             if component_name is None:
-                _LOGGER.warning(
-                    "Unsupported device type: %s, channel id: %s",
-                    device_type,
-                    channel["id"],
-                )
+                _LOGGER.warning(f"Unsupported device type: {device_type}, channel id: {channel["id"]}")
                 continue
 
             component_configs.setdefault(component_name, []).append(channel)
             entities += 1
 
-        _LOGGER.debug("Exta Life devices found during discovery: %d", entities)
+        _LOGGER.debug(f"Exta Life devices found during discovery: {entities}")
 
         # Load discovered devices
 
         if component_configs:
+
+            channels_for_update: list[dict[str, Any]] = []
+            uniq_serials: list[str] = []
+            for component_name, channels in component_configs.items():
+                for channel in channels:
+                    serial_no = str(channel["data"]["serial"])
+                    if not (serial_no in uniq_serials):
+                        channels_for_update.append(channel)
+                        uniq_serials.append(serial_no)
+
+            if len(channels_for_update) > 0:
+                component_configs.setdefault(DOMAIN_UPDATE, channels_for_update)
+                _LOGGER.debug(f"Found {len(uniq_serials)} devices for updates monitoring")
+
             # can happen we don't have any sensors, so we need to put an empty list to trigger
             # creation of virtual sensors (if any) for
             component_configs.setdefault(DOMAIN_SENSOR, [])
@@ -535,11 +527,6 @@ class ChannelDataManager:
                 await self._hass.config_entries.async_forward_entry_setup(
                     self._config_entry, component_name
                 )
-                # self._hass.async_create_task(
-                #     self._hass.config_entries.async_forward_entry_setup(
-                #         self._config_entry, component_name
-                #     )
-                # )
 
         # setup pseudo-platforms
         for component_name, channels in other_configs.items():
@@ -556,177 +543,22 @@ class ExtaLifeChannel(Entity):
     add_entity_cb - HA callback for adding entity in entity registry
     """
 
-    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
+    def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
         """Channel data -- channel information from PyExtaLife."""
 
+        self._attr_translation_key = DOMAIN
         self._assumed_on: bool = False
         self.config_entry: ConfigEntry = config_entry
-        self.channel_id: str = channel_data.get("id")
-        self.channel_data: dict[str, Any] = channel_data.get("data")
+        self.channel_id: str = channel.get("id")
+        self.channel_data: dict[str, Any] = channel.get("data")
         self.data_available: bool = True
 
-    @staticmethod
-    def _mapping_to_dict(mapping: Mapping[str, Any] | None) -> dict[str, Any]:
-        return dict(mapping) if mapping is not None else {}
+    async def async_action(self, action, **add_pars: Any) -> dict[str, Any] | None:
+        """Run controller command/action. Actions are currently hardcoded in platforms"""
 
-    @staticmethod
-    def _extra_state_attribute_update(src: dict[str, Any], dst: dict[str, Any], key: str):
-        if src.get(key) is not None:
-            dst.update({key: src.get(key)})
+        _LOGGER.debug(f"Executing action '{action}' on channel {self.channel_id}, params: {add_pars}")
 
-    @staticmethod
-    def get_notif_upd_signal(ch_id: str) -> str:
-        return f"{SIGNAL_NOTIF_STATE_UPDATED}_{ch_id}"
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-
-        _LOGGER.debug("async_added_to_hass() for entity: %s", self.entity_id)
-        Core.get(self.config_entry.entry_id).async_signal_register(
-            SIGNAL_DATA_UPDATED, self.async_update_callback
-        )
-
-        Core.get(self.config_entry.entry_id).async_signal_register(
-            self.get_notif_upd_signal(self.channel_id),
-            self.async_state_notif_update_callback,
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        await super().async_will_remove_from_hass()
-
-    async def async_update_callback(self) -> None:
-        """Inform HA of state update from status poller"""
-        _LOGGER.debug("Update callback for entity id: %s", self.entity_id)
-        self.async_schedule_update_ha_state(True)
-
-    async def async_state_notif_update_callback(self, *args: Any) -> None:
-        """Inform HA of state change received from controller status notification"""
-        data = args[0]
-        _LOGGER.debug(
-            "State update notification callback for entity id: %s, data: %s",
-            self.entity_id,
-            data,
-        )
-
-        self.on_state_notification(data)
-
-    def on_state_notification(self, data: dict[str, Any]) -> None:
-        """must be overridden in entity subclasses"""
-
-    def get_unique_id(self) -> str:
-        """Provide unique id for HA entity registry"""
-        return f"extalife-{str(self.channel_data.get('serial'))}-{self.channel_id}"
-
-    @property
-    def should_poll(self) -> bool:
-        """
-        Turn off HA polling in favour of update-when-needed status changes.
-        Updates will be passed to HA by calling async_schedule_update_ha_state() for each entity
-        """
-        return False
-
-    @property
-    def core(self) -> Core:
-        return Core.get(self.config_entry.entry_id)
-
-    @property
-    def controller(self) -> ExtaLifeAPI:
-        """Return PyExtaLife's controller component associated with entity."""
-        return self.core.api
-
-    @property
-    def data_poller(self) -> ChannelDataManager:
-        """Return Data poller object"""
-        return self.core.data_manager
-
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID."""
-        return self.get_unique_id()
-
-    @property
-    def device_type(self) -> ExtaLifeDeviceModel:
-        """Return device type"""
-        return ExtaLifeDeviceModel(self.channel_data.get("type"))
-
-    @property
-    def model(self) -> ExtaLifeDeviceModelName:
-        """Return model"""
-        return ExtaLifeDeviceInfo.get_model_name(self.device_type)
-
-    @property
-    def is_exta_free(self) -> bool:
-        """Returns boolean if entity represents Exta Free device"""
-        exta_free_device = self.channel_data.get("exta_free_device")
-        if exta_free_device is None or not bool(exta_free_device):
-            return False
-        return True
-
-    @property
-    def assumed_state(self) -> bool:
-        """Returns boolean if entity status is assumed status"""
-        ret = self.is_exta_free
-        _LOGGER.debug("Assumed state for entity: %s, %s", self.entity_id, ret)
-        return ret
-
-    @property
-    def device_info(self) -> DeviceInfo | None:
-        """Return device specific attributes."""
-
-        prod_series = (
-            PRODUCT_SERIES if not self.is_exta_free else PRODUCT_SERIES_EXTA_FREE
-        )
-        return {
-            "identifiers": {(DOMAIN, self.channel_data.get("serial"))},
-            "name": f"{PRODUCT_MANUFACTURER} {prod_series} {self.model}",
-            "manufacturer": PRODUCT_MANUFACTURER,
-            "model": self.model,
-            "via_device": (DOMAIN, self.controller.mac),
-            "sw_version": None
-        }
-
-    @property
-    def name(self) -> str | None:
-        """Return name of the entity"""
-        return self.channel_data["alias"]
-
-    async def async_action(self, action, **add_pars: Any) -> list | None:
-        """
-        Run controller command/action.
-
-        Actions are currently hardcoded in platforms
-        """
-        _LOGGER.debug(
-            "Executing action %s on channel %s, params: %s",
-            action,
-            self.channel_id,
-            add_pars,
-        )
-
-        try:
-            resp = await self.controller.async_execute_action(action, self.channel_id, **add_pars)
-        except TCPConnError as err:
-            _LOGGER.error(err.data)
-            return None
-
-        return resp
-
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        is_timeout = (
-            self.channel_data.get("is_timeout")
-            if self.config_entry.options.get(OPTIONS_GENERAL_DISABLE_NOT_RESPONDING)
-            else False
-        )
-        _LOGGER.debug(
-            "available() for entity: %s. self.data_available: %s; 'is_timeout': %s",
-            self.entity_id,
-            self.data_available,
-            is_timeout,
-        )
-
-        return self.data_available is True and is_timeout is False
+        return await self.controller.async_execute_action(action, self.channel_id, **add_pars)
 
     async def async_update(self) -> None:
         """Call to update state."""
@@ -736,11 +568,7 @@ class ExtaLifeChannel(Entity):
         # read "data" section/dict by channel id
         data = channel_indx.get(self.channel_id)
 
-        _LOGGER.debug(
-            "async_update() for entity: %s, data to be updated: %s",
-            self.entity_id,
-            data,
-        )
+        _LOGGER.debug(f"async_update() for entity: {self.entity_id}, data to be updated: {data}")
 
         if data is None:
             self.data_available = False
@@ -757,24 +585,6 @@ class ExtaLifeChannel(Entity):
 
         self.data_poller.update_channel(self.channel_id, self.channel_data)
         self.async_schedule_update_ha_state(True)
-
-    @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return state attributes"""
-        es_attr: dict[str, Any] = self._mapping_to_dict(super().extra_state_attributes)
-        es_attr.update(
-            {
-                "channel_id": self.channel_id,
-                "not_responding": self.channel_data.get("is_timeout")
-            }
-        )
-        return es_attr
-
-    @property
-    def virtual_sensors(self) -> list[dict[str, Any]]:
-        """Return channel attributes which will serve as the basis for virtual sensors.
-        Platforms should implement this property and return additional sensors if needed"""
-        return []
 
     def _get_virtual_sensors(self) -> list[dict[str, Any]]:
         """By default, check all entity attributes and return virtual sensor config"""
@@ -822,14 +632,158 @@ class ExtaLifeChannel(Entity):
         shouldbe created by the sensor platform"""
 
         virtual_sensors = self._get_virtual_sensors()
-        _LOGGER.debug("Virtual sensors: %s", virtual_sensors)
-        for virtual in virtual_sensors:
-            v_channel_data = channel_data.copy()
-            v_channel_data.update({VIRTUAL_SENSOR_CHN_FIELD: virtual})
-            self.core.push_channels(virtual_sensor_domain, [v_channel_data], append=True, custom=True)
+        if len(virtual_sensors):
+            _LOGGER.debug(f"Virtual sensors: {virtual_sensors}")
+            for virtual in virtual_sensors:
+                v_channel_data = channel_data.copy()
+                v_channel_data.update({VIRTUAL_SENSOR_CHN_FIELD: virtual})
+                self.core.push_channels(virtual_sensor_domain, [v_channel_data], append=True, custom=True)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        _LOGGER.debug(f"async_added_to_hass: entity: {self.entity_id}")
+        self.core.async_signal_register(SIGNAL_DATA_UPDATED, self.async_update_callback)
+
+        self.core.async_signal_register(
+            self.signal_get_id_for_notification(self.channel_id),
+            self.async_state_notif_update_callback,
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        await super().async_will_remove_from_hass()
+
+    async def async_update_callback(self) -> None:
+        """Inform HA of state update from status poller"""
+        _LOGGER.debug("Update callback for entity id: %s", self.entity_id)
+        self.async_schedule_update_ha_state(True)
+
+    async def async_state_notif_update_callback(self, *args: Any) -> None:
+        """Inform HA of state change received from controller status notification"""
+        data = args[0]
+        _LOGGER.debug(f"State update notification callback for entity id: {self.entity_id}, data: {data}")
+
+        self.on_state_notification(data)
+
+    def on_state_notification(self, data: dict[str, Any]) -> None:
+        """must be overridden in entity subclasses"""
+
+    def get_unique_id(self) -> str:
+        """Provide unique id for HA entity registry"""
+        return f"extalife-{str(self.channel_data.get('serial'))}-{self.channel_id}"
+
+    @property
+    def assumed_state(self) -> bool:
+        """Returns boolean if entity status is assumed status"""
+        ret = self.is_exta_free
+        _LOGGER.debug(f"Assumed state for entity: {self.entity_id}, {ret}")
+        return ret
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        is_timeout = (
+            self.channel_data.get("is_timeout")
+            if self.config_entry.options.get(OPTIONS_GENERAL_DISABLE_NOT_RESPONDING)
+            else False
+        )
+        _LOGGER.debug(f"available() for entity: {self.entity_id}. "
+                      f"self.data_available: {self.data_available}; 'is_timeout': {is_timeout}")
+
+        return self.data_available is True and is_timeout is False
+
+    @property
+    def controller(self) -> ExtaLifeAPI:
+        """Return PyExtaLife's controller component associated with entity."""
+        return self.core.api
+
+    @property
+    def core(self) -> Core:
+        return Core.get(self.config_entry.entry_id)
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return device specific attributes."""
+
+        prod_series = (
+            PRODUCT_SERIES if not self.is_exta_free else PRODUCT_SERIES_EXTA_FREE
+        )
+        serial_no = self.channel_data.get("serial")
+        return {
+            "identifiers": {(DOMAIN, serial_no)},
+            "name": f"{PRODUCT_MANUFACTURER} {prod_series} {self.model}",
+            "manufacturer": PRODUCT_MANUFACTURER,
+            "model": self.model,
+            "via_device": (DOMAIN, self.controller.mac),
+            "serial_number": f"{serial_no:06X}",
+            "sw_version": None
+        }
+
+    @property
+    def device_type(self) -> ExtaLifeDeviceModel:
+        """Return device type"""
+        return ExtaLifeDeviceModel(self.channel_data.get("type"))
+
+    @property
+    def data_poller(self) -> ChannelDataManager:
+        """Return Data poller object"""
+        return self.core.data_manager
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+        """Return state attributes"""
+        es_attr: dict[str, Any] = self._mapping_to_dict(super().extra_state_attributes)
+        es_attr.update(
+            {
+                "channel_id": self.channel_id,
+                "not_responding": self.channel_data.get("is_timeout")
+            }
+        )
+        return es_attr
+
+    @property
+    def is_exta_free(self) -> bool:
+        """Returns boolean if entity represents Exta Free device"""
+        exta_free_device = self.channel_data.get("exta_free_device")
+        if exta_free_device is None or not bool(exta_free_device):
+            return False
+        return True
+
+    @property
+    def model(self) -> ExtaLifeDeviceModelName:
+        """Return model"""
+        return ExtaLifeMap.type_to_model_name(self.device_type)
+
+    @property
+    def name(self) -> str | None:
+        """Return name of the entity"""
+        return self.channel_data["alias"]
+
+    @property
+    def should_poll(self) -> bool:
+        """
+        Turn off HA polling in favour of update-when-needed status changes.
+        Updates will be passed to HA by calling async_schedule_update_ha_state() for each entity
+        """
+        return False
+
+    @property
+    def unique_id(self) -> str:
+        """Return a unique ID."""
+        return self.get_unique_id()
+
+    @property
+    def virtual_sensors(self) -> list[dict[str, Any]]:
+        """Return channel attributes which will serve as the basis for virtual sensors.
+        Platforms should implement this property and return additional sensors if needed"""
+        return []
 
     @staticmethod
-    def format_state_attr(attr: dict[str, Any]) -> dict[str, Any]:
+    def signal_get_id_for_notification(ch_id: str) -> str:
+        return f"{SIGNAL_NOTIF_STATE_UPDATED}_{ch_id}"
+
+    @staticmethod
+    def _format_state_attr(attr: dict[str, Any]) -> dict[str, Any]:
         """Format state attributes based on name and other criteria.
         Can be overridden in dedicated subclasses to refine formatting"""
         from re import search
@@ -852,18 +806,77 @@ class ExtaLifeChannel(Entity):
                 attr.update({k: v})
         return attr
 
+    @staticmethod
+    def _mapping_to_dict(mapping: Mapping[str, Any] | None) -> dict[str, Any]:
+        return dict(mapping) if mapping is not None else {}
 
-class ExtaLifeController(Entity):
+    @staticmethod
+    def _extra_state_attribute_update(src: dict[str, Any], dst: dict[str, Any], key: str):
+        if src.get(key) is not None:
+            dst.update({key: src.get(key)})
+
+
+class ExtaLifeControllerBase(Entity):
     """Base class of a ExtaLife Channel (an equivalent of HA's Entity)."""
+
+    @staticmethod
+    def _mapping_to_dict(mapping: Mapping[str, Any] | None) -> dict[str, any]:
+        return dict(mapping) if mapping is not None else {}
 
     def __init__(self, entry_id: str):
         self._entry_id: str = entry_id
         self._core: Core = Core.get(entry_id)
         self._attr_translation_key = "controller"
 
-    @staticmethod
-    def _mapping_to_dict(mapping: Mapping[str, Any] | None) -> dict[str, any]:
-        return dict(mapping) if mapping is not None else {}
+    async def async_added_to_hass(self) -> None:
+        """When entity added to HA"""
+        pass
+
+    async def async_update(self) -> None:
+        """Entity update callback"""
+        # not necessary for the controller entity; will be updated on demand, externally
+
+    @property
+    def api(self) -> ExtaLifeAPI:
+        """Return PyExtaLife's controller API instance."""
+        return self.core.api
+
+    @property
+    def config_entry(self) -> ConfigEntry:
+        return self.core.config_entry
+
+    @property
+    def core(self) -> Core:
+        return self._core
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Register controller in Device Registry"""
+        return {
+            "connections": {(dr.CONNECTION_NETWORK_MAC, self.mac)},
+            "identifiers": {(DOMAIN, self.mac)},
+            "manufacturer": PRODUCT_MANUFACTURER,
+            "name": f"{PRODUCT_MANUFACTURER} {PRODUCT_SERIES} {PRODUCT_CONTROLLER_MODEL}",
+            "model": PRODUCT_CONTROLLER_MODEL,
+            "sw_version": self.api.version_installed
+        }
+
+    @property
+    def mac(self) -> str | None:
+        """controller's MAC address"""
+        return self.api.mac
+
+    @property
+    def should_poll(self) -> bool:
+        """Turn off HA status polling"""
+        return False
+
+
+class ExtaLifeController(ExtaLifeControllerBase):
+    """Base class of a ExtaLife Channel (an equivalent of HA's Entity)."""
+
+    def __init__(self, entry_id: str):
+        super().__init__(entry_id)
 
     @staticmethod
     async def register_controller(entry_id: str) -> None:
@@ -879,7 +892,7 @@ class ExtaLifeController(Entity):
             domain=DOMAIN,
             platform=None,
             entity_namespace=None,
-            scan_interval=DEFAULT_SCAN_INTERVAL,
+            scan_interval=DEFAULT_SCAN_INTERVAL
         )
         platform.config_entry = core.config_entry
 
@@ -892,6 +905,7 @@ class ExtaLifeController(Entity):
 
     async def async_added_to_hass(self) -> None:
         """When entity added to HA"""
+        await super().async_added_to_hass()
 
         # let the Core know about the controller entity
         self._core.controller_entity_added_to_hass(self)
@@ -901,50 +915,16 @@ class ExtaLifeController(Entity):
         """Return a unique ID."""
         return self.mac
 
-    @property
-    def mac(self) -> str | None:
-        """controller's MAC address"""
-        return self.api.mac
-
-    @property
-    def icon(self) -> str | None:
-        """Return the icon to use in the frontend, if any."""
-        return "mdi:cube-outline"
-
-    @property
-    def should_poll(self) -> bool:
-        """Turn off HA status polling"""
-        return False
-
-    @property
-    def core(self) -> Core:
-        return self._core
-
-    @property
-    def api(self) -> ExtaLifeAPI:
-        """Return PyExtaLife's controller API instance."""
-        return self.core.api
-
-    @property
-    def device_info(self) -> DeviceInfo | None:
-        """Register controller in Device Registry"""
-        return {
-            "connections": {(dr.CONNECTION_NETWORK_MAC, self.mac)},
-            "identifiers": {(DOMAIN, self.mac)},
-            "manufacturer": PRODUCT_MANUFACTURER,
-            "name": f"{PRODUCT_MANUFACTURER} {PRODUCT_SERIES} {PRODUCT_CONTROLLER_MODEL}",
-            "model": PRODUCT_CONTROLLER_MODEL,
-            "sw_version": self.api.sw_version
-        }
+    # this was moved to file icons.json
+    # @property
+    # def icon(self) -> str | None:
+    #     """Return the icon to use in the frontend, if any."""
+    #     return "mdi:cube-outline"
 
     @property
     def name(self) -> str | None:
         """Return name of the entity"""
         return self.api.name
-
-    @property
-    def config_entry(self) -> ConfigEntry:
-        return self.core.config_entry
 
     @property
     def available(self) -> bool:
@@ -960,22 +940,20 @@ class ExtaLifeController(Entity):
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return entity specific state attributes."""
+
         es_attr = self._mapping_to_dict(super().extra_state_attributes)
         es_attr.update(
                 {
                      "name": self.api.name,
                      "type": "gateway",
                      "mac_address": self.api.mac,
-                     "hostname": self.api.host,
+                     "hostname": ExtaLifeConnParams.get_addr(self.api.host, self.api.port),
+                     "username": self.api.username,
                      "ipv4_address": self.api.network["ip_address"],
-                     "ipv4_mask": self.api.network["netmask"],
-                     "ipv4_gw": self.api.network["gateway"],
+                     "ipv4_netmask": self.api.network["netmask"],
+                     "ipv4_gateway": self.api.network["gateway"],
                      "ipv4_dns": self.api.network["dns"],
-                     "software_version": self.api.sw_version,
+                     "software_version": self.api.version_installed,
                 }
             )
         return es_attr
-
-    async def async_update(self) -> None:
-        """Entity update callback"""
-        # not necessary for the controller entity; will be updated on demand, externally

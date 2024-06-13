@@ -72,7 +72,7 @@ class ELSensorEntityDescription(SensorEntityDescription):
 
     key: str = ""
     factor: float = 1  # value scaling factor to have a value in normalized units like Watt, Volt etc
-    value_path: str | dict[ExtaLifeDeviceModel, str] = "value_1"  # path to the value field in channel_data
+    value_path: str | dict[ExtaLifeDeviceModel, str] = "value_1"  # path to the value field in channel
 
 
 class SensorEntityConfig:
@@ -293,7 +293,7 @@ async def async_setup_entry(
     core: Core = Core.get(config_entry.entry_id)
     channels: list[dict[str, Any]] = core.get_channels(DOMAIN_SENSOR)
 
-    _LOGGER.debug("Discovery: %s", pformat(channels))
+    _LOGGER.debug("Discovery: %s", channels)
     if channels:
         async_add_entities(
             [ExtaLifeSensor(channel_data, config_entry) for channel_data in channels]
@@ -307,7 +307,7 @@ async def async_setup_entry(
         _LOGGER.debug("Discovery (%s): %s", virtual_domain, pformat(channels))
         if channels:
             async_add_entities(
-                [ExtaLifeVirtualSensor(channel_data, config_entry, virtual_domain) for channel_data in channels]
+                [ExtaLifeVirtualSensor(channel, config_entry, virtual_domain) for channel in channels]
             )
 
         core.pop_channels(virtual_domain)
@@ -316,9 +316,9 @@ async def async_setup_entry(
 class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
     """Representation of Exta Life Sensors"""
 
-    def __init__(self, channel_data: dict[str, Any],
+    def __init__(self, channel: dict[str, Any],
                  config_entry: ConfigEntry, device_class: SensorDeviceClass | ExtaSensorDeviceClass):
-        super().__init__(channel_data, config_entry)
+        super().__init__(channel, config_entry)
 
         self._config: SensorEntityConfig = SensorEntityConfig(SENSOR_TYPES[device_class])
 
@@ -364,12 +364,6 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
         return value
 
     @property
-    def suggested_unit_of_measurement(self) -> str | None:
-        """Return the unit which should be used for the sensor's state."""
-
-        return self.native_unit_of_measurement
-    
-    @property
     def suggested_display_precision(self) -> int | None:        
         """Return the suggested number of decimal digits for display."""
         if self._config.suggested_display_precision is None:
@@ -385,7 +379,7 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
         self._extra_state_attribute_update(self.channel_data, es_attrs, "sync_time")
         self._extra_state_attribute_update(self.channel_data, es_attrs, "last_sync")
 
-        return self.format_state_attr(es_attrs)
+        return self._format_state_attr(es_attrs)
 
     def on_state_notification(self, data: dict[str, Any]) -> None:
         """React on state notification from controller"""
@@ -427,21 +421,21 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
 class ExtaLifeSensor(ExtaLifeSensorBase):
     """Representation of Exta Life Sensors"""
 
-    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
+    def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
 
-        ch_data: dict[str, Any] = channel_data.get("data")
+        ch_data: dict[str, Any] = channel.get("data")
         device_type: ExtaLifeDeviceModel = ExtaLifeDeviceModel(ch_data.get("type"))
-        channel: int = ch_data.get("channel")
+        channel_no: int = ch_data.get("channel")
 
         if device_type in DEVICE_ARR_ALL_SENSOR_MULTI:
-            device_class = MAP_EXTA_MULTI_CHN_TO_DEV_CLASS[device_type][channel]
+            device_class = MAP_EXTA_MULTI_CHN_TO_DEV_CLASS[device_type][channel_no]
         else:
             device_class = MAP_EXTA_DEV_TYPE_TO_DEV_CLASS[device_type]
 
-        super().__init__(channel_data, config_entry, device_class)
+        super().__init__(channel, config_entry, device_class)
 
         # create virtual, attribute sensors
-        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_SENSOR, channel_data)
+        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_SENSOR, channel)
 
     @property
     def virtual_sensors(self) -> list[dict[str, Any]]:
@@ -469,13 +463,13 @@ class ExtaLifeSensor(ExtaLifeSensorBase):
 class ExtaLifeVirtualSensor(ExtaLifeSensorBase):
     """Representation of Exta Life Sensors"""
 
-    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry, virtual_domain):
+    def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry, virtual_domain):
 
         self._virtual_domain = virtual_domain
-        self._virtual_prop: dict[str, Any] = channel_data.get(VIRTUAL_SENSOR_CHN_FIELD)
+        self._virtual_prop: dict[str, Any] = channel.get(VIRTUAL_SENSOR_CHN_FIELD)
 
         # base constructor must be called here after _virtual_prop assignment
-        super().__init__(channel_data, config_entry, self._virtual_prop.get(VIRTUAL_SENSOR_DEV_CLS))
+        super().__init__(channel, config_entry, self._virtual_prop.get(VIRTUAL_SENSOR_DEV_CLS))
 
         self.override_config_from_dict(self._virtual_prop)
 

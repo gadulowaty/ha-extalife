@@ -1,6 +1,5 @@
 """Support for Exta Life roller shutters: SRP, SRM, ROB(future)"""
 import logging
-from pprint import pformat
 from typing import (
     Any,
 )
@@ -27,7 +26,7 @@ from .helpers.const import (
 )
 from .helpers.core import Core
 from .pyextalife import (
-    ExtaLifeAPI,
+    ExtaLifeAction,
     ExtaLifeDeviceModel,
     DEVICE_ARR_COVER,
     DEVICE_ARR_SENS_GATE_CONTROLLER
@@ -60,10 +59,10 @@ async def async_setup_entry(
     core: Core = Core.get(config_entry.entry_id)
     channels: list[dict[str, Any]] = core.get_channels(DOMAIN_COVER)
 
-    _LOGGER.debug("Discovery: %s", pformat(channels))
+    _LOGGER.debug("Discovery: %s", channels)
     if channels:
         async_add_entities(
-            [ExtaLifeCover(channel_data, config_entry) for channel_data in channels]
+            [ExtaLifeCover(channel, config_entry) for channel in channels]
         )
 
     core.pop_channels(DOMAIN_COVER)
@@ -72,10 +71,10 @@ async def async_setup_entry(
 class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
     """Representation of ExtaLife Cover"""
 
-    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
-        super().__init__(channel_data, config_entry)
+    def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
+        super().__init__(channel, config_entry)
 
-        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_COVER_SENSOR, channel_data)
+        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_COVER_SENSOR, channel)
 
     # Exta Life extreme cover positions
     POS_CLOSED = 100
@@ -132,7 +131,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
         value = pos if self.is_inverted_control else 100-pos
 
         _LOGGER.debug("set_cover_position for cover: %s. From HA: %s, model: %s", self.entity_id, pos, value)
-        if await self.async_action(ExtaLifeAPI.ACTION_SET_POS, value=value):
+        if await self.async_action(ExtaLifeAction.EXTA_LIFE_SET_POS, value=value):
             data["value"] = value
             self.async_schedule_update_ha_state()
 
@@ -170,17 +169,17 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
 
         if not self.is_exta_free:
             if self.device_class != CoverDeviceClass.GATE and self.device_class != CoverDeviceClass.DOOR:
-                action = ExtaLifeAPI.ACTION_SET_POS
+                action = ExtaLifeAction.EXTA_LIFE_SET_POS
             else:
-                action = ExtaLifeAPI.ACTION_SET_GATE_POS
+                action = ExtaLifeAction.EXTA_LIFE_GATE_POS
 
             if await self.async_action(action, value=pos):
                 data["value"] = pos
                 _LOGGER.debug("open_cover for cover: %s. model: %s", self.entity_id, pos)
                 self.async_schedule_update_ha_state()
         else:
-            if (await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_UP_PRESS) and
-                    await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_UP_RELEASE)):
+            if (await self.async_action(ExtaLifeAction.EXTA_FREE_UP_PRESS) and
+                    await self.async_action(ExtaLifeAction.EXTA_FREE_UP_RELEASE)):
                 self.async_schedule_update_ha_state()
 
     async def async_close_cover(self, **kwargs: Any) -> None:
@@ -189,9 +188,9 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
         pos = ExtaLifeCover.POS_CLOSED
         if not self.is_exta_free:
             if self.device_class != CoverDeviceClass.GATE and self.device_class != CoverDeviceClass.DOOR:
-                action = ExtaLifeAPI.ACTION_SET_POS
+                action = ExtaLifeAction.EXTA_LIFE_SET_POS
             else:
-                action = ExtaLifeAPI.ACTION_SET_GATE_POS
+                action = ExtaLifeAction.EXTA_LIFE_GATE_POS
             if await self.async_action(action, value=pos):
                 data["value"] = pos
                 _LOGGER.debug("close_cover for cover: %s. model: %s", self.entity_id, pos)
@@ -199,13 +198,13 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
 
         elif ExtaLifeDeviceModel(self.channel_data.get("type")) != ExtaLifeDeviceModel.ROB01:
             # ROB-01 supports only 1 toggle mode using 1 command
-            if (await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_DOWN_PRESS) and
-                    await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_DOWN_RELEASE)):
+            if (await self.async_action(ExtaLifeAction.EXTA_FREE_DOWN_PRESS) and
+                    await self.async_action(ExtaLifeAction.EXTA_FREE_DOWN_RELEASE)):
                 self.async_schedule_update_ha_state()
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the cover."""
-        await self.async_action(ExtaLifeAPI.ACTION_STOP)
+        await self.async_action(ExtaLifeAction.EXTA_LIFE_STOP)
 
     def on_state_notification(self, data: dict[str, Any]) -> None:
         """ React on state notification from controller """

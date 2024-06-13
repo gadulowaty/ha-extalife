@@ -1,26 +1,59 @@
 """ definition of all services for this integration """
 import asyncio
 import logging
+import os.path
 import voluptuous as vol
+from typing import (
+    Any,
+)
+
 from homeassistant.const import CONF_ENTITY_ID
-import homeassistant.helpers.entity_registry as er
-import homeassistant.helpers.config_validation as cv
-from homeassistant.core import HomeAssistant
-from .const import DOMAIN
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+)
+from homeassistant.helpers import (
+    config_validation as cv,
+    entity_registry as er,
+)
+from homeassistant.helpers.entity_registry import (
+    RegistryEntry,
+)
+
+from .const import (
+    CONF_BACKUP_PATH,
+    CONF_BACKUP_SCHEDULE,
+    CONF_BACKUP_RETENTION,
+    DOMAIN,
+)
 from .typing import CoreType
 
 # services
-SVC_RESTART = "restart"  # restart controller
-SVC_REFRESH_STATE = "refresh_state"  # execute status refresh, fetch new status from controller
+SVC_RESTART = "restart"                # restart controller
+SVC_TEST_BUTTON = "test_button"
+SVC_REFRESH_STATE = "refresh_state"    # execute status refresh, fetch new status from controller
+SVC_CONFIG_BACKUP = "config_backup"    # create controller configuration backup
+SVC_CONFIG_RESTORE = "config_restore"  # restore controller configuration from backup
 
 _LOGGER = logging.getLogger(__name__)
 
 SCHEMA_BASE = vol.Schema(
     {
-        vol.Required(CONF_ENTITY_ID): cv.entity_id
+        vol.Required(CONF_ENTITY_ID): cv.entity_id,
     }
 )
 SCHEMA_REFRESH_STATE = SCHEMA_RESTART = SCHEMA_BASE
+
+SCHEMA_CONFIG = vol.Schema(
+    {
+        vol.Required(CONF_ENTITY_ID): cv.entity_id,
+        vol.Optional(CONF_BACKUP_PATH, default=""): cv.path,
+        vol.Optional(CONF_BACKUP_SCHEDULE, default=""): cv.string,
+        vol.Optional(CONF_BACKUP_RETENTION, default=0): cv.positive_int,
+    }
+)
+SCHEMA_CONFIG_BACKUP = SCHEMA_CONFIG
+SCHEMA_CONFIG_RESTORE = SCHEMA_CONFIG
 
 SCHEMA_TEST_BUTTON = vol.Schema(
     {
@@ -35,54 +68,95 @@ SCHEMA_TEST_BUTTON = vol.Schema(
 class ExtaLifeServices:
     """ handle Exta Life services """
 
-    def __init__(self, hass: HomeAssistant):
-        self._hass = hass
-        self._services = []
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass: HomeAssistant = hass
+        self._services: list[str] = []
 
-    def _get_core(self, entity_id: str) -> CoreType:
+    def _get_core(self, entry: RegistryEntry | str) -> CoreType:
         """ Resolve the Core helper class """
         from .core import Core
-        return Core.get(self._get_entry_id(entity_id))
 
-    def _get_entry_id(self, entity_id: str):
+        if isinstance(entry, str):
+            entry = self._get_entry(entry)
+
+        return Core.get(entry.config_entry_id)
+
+    def _get_entry(self, entity_id: str) -> RegistryEntry | None:
         """ Resolve ConfigEntry.entry_id for entity_id """
         # registry = asyncio.run_coroutine_threadsafe(er.async_get_registry(self._hass), self._hass.loop).result()
         registry = er.async_get(self._hass)
-        return registry.async_get(entity_id).config_entry_id
+        if registry:
+            return registry.async_get(entity_id)
+        return None
 
-    async def async_register_services(self):
+    async def async_register_services(self) -> None:
         """ register all Exta Life integration services """
-        self._hass.services.async_register(DOMAIN, SVC_RESTART, self._handle_restart, SCHEMA_RESTART)
-        self._services.append(SVC_RESTART)
 
-        self._hass.services.async_register(DOMAIN, SVC_REFRESH_STATE, self._handle_refresh_state, SCHEMA_REFRESH_STATE)
-        self._services.append(SVC_REFRESH_STATE)
+        def register_service(name: str, entry: Any, schema: vol.Schema) -> None:
+            self._hass.services.async_register(DOMAIN, name, entry, schema)
+            self._services.append(name)
 
-        self._hass.services.async_register(DOMAIN, 'test_button', self._handle_test_button, SCHEMA_TEST_BUTTON)
-        self._services.append('test_button')
+        register_service(SVC_RESTART, self._handle_restart, SCHEMA_RESTART)
+        register_service(SVC_REFRESH_STATE, self._handle_refresh_state, SCHEMA_REFRESH_STATE)
+        register_service(SVC_TEST_BUTTON, self._handle_test_button, SCHEMA_TEST_BUTTON)
+        register_service(SVC_CONFIG_BACKUP, self._handle_config_backup, SCHEMA_CONFIG_BACKUP)
+        register_service(SVC_CONFIG_RESTORE, self._handle_config_restore, SCHEMA_CONFIG_RESTORE)
 
-    async def async_unregister_services(self):
+    async def async_unregister_services(self) -> None:
         """ Unregister all Exta Life integration services """
         for service in self._services:
             self._hass.services.async_remove(DOMAIN, service)
 
-    def _handle_restart(self, call):
+    def _handle_restart(self, call: ServiceCall) -> None:
         """ service: 'extalife.restart' """
         entity_id = call.data.get(CONF_ENTITY_ID)
 
         core = self._get_core(entity_id)
+        if core and core.api:
+            asyncio.run_coroutine_threadsafe(core.api.async_restart(), self._hass.loop)
 
-        asyncio.run_coroutine_threadsafe(core.api.async_restart(), self._hass.loop)
-
-    def _handle_refresh_state(self, call):
+    def _handle_refresh_state(self, call: ServiceCall) -> None:
         """ service: extalife.refresh_state """
         entity_id = call.data.get(CONF_ENTITY_ID)
 
         core = self._get_core(entity_id)
-        asyncio.run_coroutine_threadsafe(core.data_manager.async_execute_status_polling(), self._hass.loop)
-        #  core.data_manager.async_execute_status_polling
+        if core and core.api:
+            asyncio.run_coroutine_threadsafe(core.data_manager.async_polling_task_execute(), self._hass.loop)
 
-    def _handle_test_button(self, call):
+    def _get_backup_path(self, path: str | None) -> str:
+        if not path:
+            return self._hass.config.path(DOMAIN)
+        elif not os.path.isabs(path):
+            return self._hass.config.path(DOMAIN, path)
+        return path
+
+    def _handle_config_backup(self, call: ServiceCall) -> None:
+        # TODO: missing one-liner
+        entity_id: str = call.data.get(CONF_ENTITY_ID)
+
+        entry: RegistryEntry | None = self._get_entry(entity_id)
+        if entry:
+            core: CoreType | None = self._get_core(entry)
+            if core and core.api:
+                path: str = self._get_backup_path(call.data.get(CONF_BACKUP_PATH, ""))
+                prefix: str = call.data.get(CONF_BACKUP_SCHEDULE, "")
+                retention: int = call.data.get(CONF_BACKUP_RETENTION)
+
+                asyncio.run_coroutine_threadsafe(
+                    core.api.async_config_backup(path, schedule=prefix, retention=retention),
+                    self._hass.loop
+                )
+
+    def _handle_config_restore(self, call: ServiceCall) -> None:
+        # TODO: missing one-liner
+        entity_id = call.data.get(CONF_ENTITY_ID)
+        path: str = call.data.get(CONF_BACKUP_PATH)
+        if not path:
+            path = self._hass.config.path()
+        core = self._get_core(entity_id)
+        asyncio.run_coroutine_threadsafe(core.api.async_config_restore(path), self._hass.loop)
+
+    def _handle_test_button(self, call: ServiceCall) -> None:
         from .common import PseudoPlatform
 
         button = call.data.get('button')
@@ -97,7 +171,7 @@ class ExtaLifeServices:
 
         num = 0
 
-        def click():
+        def click() -> None:
             nonlocal num
             seq = 1
             num += 1

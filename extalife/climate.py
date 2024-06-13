@@ -1,5 +1,5 @@
 import logging
-from pprint import pformat
+
 from typing import (
     Any,
     Mapping,
@@ -26,7 +26,9 @@ from homeassistant.helpers.typing import (
 from . import ExtaLifeChannel
 from .helpers.const import DOMAIN_VIRTUAL_CLIMATE_SENSOR
 from .helpers.core import Core
-from .pyextalife import ExtaLifeAPI             # pylint: disable=syntax-error
+from .pyextalife import (
+    ExtaLifeAction,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,8 +69,8 @@ HVAC_ACTION_EXTA = {
 
 # map HA HVAC mode to Exta Life action
 HA_MODE_ACTION = {
-    HVACMode.AUTO: ExtaLifeAPI.ACTION_SET_RGT_MODE_AUTO,
-    HVACMode.HEAT: ExtaLifeAPI.ACTION_SET_RGT_MODE_MANUAL
+    HVACMode.AUTO: ExtaLifeAction.EXTA_LIFE_SET_RGT_MODE_AUTO,
+    HVACMode.HEAT: ExtaLifeAction.EXTA_LIFE_SET_RGT_MODE_MANUAL
 }
 
 
@@ -91,10 +93,10 @@ async def async_setup_entry(
     core: Core = Core.get(config_entry.entry_id)
     channels: list[dict[str, Any]] = core.get_channels(DOMAIN_CLIMATE)
 
-    _LOGGER.debug("Discovery: %s", pformat(channels))
+    _LOGGER.debug("Discovery: %s", channels)
     if channels:
         async_add_entities(
-            [ExtaLifeClimate(channel_data, config_entry) for channel_data in channels]
+            [ExtaLifeClimate(channel, config_entry) for channel in channels]
         )
 
     core.pop_channels(DOMAIN_CLIMATE)
@@ -103,10 +105,10 @@ async def async_setup_entry(
 class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):
     """Representation of Exta Life Thermostat."""
 
-    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
-        super().__init__(channel_data, config_entry)
+    def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
+        super().__init__(channel, config_entry)
 
-        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_CLIMATE_SENSOR, channel_data)
+        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_CLIMATE_SENSOR, channel)
 
     @property
     def supported_features(self) -> int | None:
@@ -178,7 +180,7 @@ class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):
             return
         temp_el = temperature * 10.0
 
-        if await self.async_action(ExtaLifeAPI.ACTION_SET_TMP, value=temp_el):
+        if await self.async_action(ExtaLifeAction.EXTA_LIFE_SET_TMP, value=temp_el):
             self.channel_data["value"] = temp_el
             self.channel_data["work_mode"] = HVAC_MODE_EXTA[HVACMode.HEAT]
             self.async_schedule_update_ha_state()

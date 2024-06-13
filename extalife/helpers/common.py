@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from ..pyextalife import (
     ExtaLifeAPI,
     ExtaLifeDeviceModel,
-    ExtaLifeDeviceInfo,
+    ExtaLifeMap,
     PRODUCT_MANUFACTURER,
     PRODUCT_SERIES,
 )
@@ -50,7 +50,7 @@ class PseudoPlatform:
 
     @property
     def device_info(self) -> dict[str, Any]:
-        model_name: str = ExtaLifeDeviceInfo.get_model_name(self.device_type)
+        model_name: str = ExtaLifeMap.type_to_model_name(self.device_type)
         serial_no: int = self._channel_data.get('serial')
         return {
             "identifiers": {(DOMAIN, serial_no)},

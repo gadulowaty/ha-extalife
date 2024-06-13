@@ -34,7 +34,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class DeviceEvent:
-    def __init__(self, event, unique_id):
+    def __init__(self, event, unique_id) -> None:
         """
         event - event in HA
         unique_id - unique identifier of the event source e.g. unique device id
@@ -132,7 +132,7 @@ class TransmitterDevice(Device):
         if self.type in (ExtaLifeDeviceModel.RNK22, ExtaLifeDeviceModel.P4572):
             buttons = 2
         elif self.type in (ExtaLifeDeviceModel.RNK24, ExtaLifeDeviceModel.P4574, ExtaLifeDeviceModel.RNM24,
-                            ExtaLifeDeviceModel.RNP21, ExtaLifeDeviceModel.RNP22):
+                           ExtaLifeDeviceModel.RNP21, ExtaLifeDeviceModel.RNP22):
             buttons = 4
         elif self.type in ExtaLifeDeviceModel.P4578:
             buttons = 8

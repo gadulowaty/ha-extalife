@@ -1,6 +1,5 @@
 """Support for Exta Life on/off switches: ROP, ROM, ROG devices"""
 import logging
-from pprint import pformat
 from typing import (
     Any,
 )
@@ -20,7 +19,9 @@ from homeassistant.helpers.typing import (
 from . import ExtaLifeChannel
 from .helpers.const import DOMAIN_VIRTUAL_SWITCH_SENSOR
 from .helpers.core import Core
-from .pyextalife import ExtaLifeAPI     # pylint: disable=syntax-error
+from .pyextalife import (
+    ExtaLifeAction,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,10 +45,10 @@ async def async_setup_entry(
     core: Core = Core.get(config_entry.entry_id)
     channels: list[dict[str, Any]] = core.get_channels(DOMAIN_SWITCH)
 
-    _LOGGER.debug("Discovery: %s", pformat(channels))
+    _LOGGER.debug("Discovery: %s", channels)
     if channels:
         async_add_entities(
-            [ExtaLifeSwitch(channel_data, config_entry) for channel_data in channels]
+            [ExtaLifeSwitch(channel, config_entry) for channel in channels]
         )
 
     core.pop_channels(DOMAIN_SWITCH)
@@ -55,41 +56,41 @@ async def async_setup_entry(
 
 class ExtaLifeSwitch(ExtaLifeChannel, SwitchEntity):
     """Representation of an ExtaLife Switch."""
-    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
-        super().__init__(channel_data, config_entry)
+    def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
+        super().__init__(channel, config_entry)
 
         self._assumed_on: bool = False
 
-        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_SWITCH_SENSOR, channel_data)
+        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_SWITCH_SENSOR, channel)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the switch."""
         if not self.is_exta_free:
-            if await self.async_action(ExtaLifeAPI.ACTION_TURN_ON):
+            if await self.async_action(ExtaLifeAction.EXTA_LIFE_TURN_ON):
                 field = "power" if self.channel_data.get("output_state") is None else "output_state"
                 self.channel_data[field] = 1
                 self.async_schedule_update_ha_state()
         else:
-            if (await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_TURN_ON_PRESS) and
-                    await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_TURN_ON_RELEASE)):
+            if (await self.async_action(ExtaLifeAction.EXTA_FREE_TURN_ON_PRESS) and
+                    await self.async_action(ExtaLifeAction.EXTA_FREE_TURN_ON_RELEASE)):
                 self._assumed_on = True
                 self.async_schedule_update_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the switch."""
         if not self.is_exta_free:
-            if await self.async_action(ExtaLifeAPI.ACTION_TURN_OFF):
+            if await self.async_action(ExtaLifeAction.EXTA_LIFE_TURN_OFF):
                 field = "power" if self.channel_data.get("output_state") is None else "output_state"
                 self.channel_data[field] = 0
                 self.async_schedule_update_ha_state()
         else:
-            if (await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_TURN_OFF_PRESS) and
-                    await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_TURN_OFF_RELEASE)):
+            if (await self.async_action(ExtaLifeAction.EXTA_FREE_TURN_OFF_PRESS) and
+                    await self.async_action(ExtaLifeAction.EXTA_FREE_TURN_OFF_RELEASE)):
                 self._assumed_on = False
                 self.async_schedule_update_ha_state()
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool:
         """Return true if switch is on."""
         if self.is_exta_free:
             return self._assumed_on
@@ -101,7 +102,7 @@ class ExtaLifeSwitch(ExtaLifeChannel, SwitchEntity):
             return True
         return False
 
-    def on_state_notification(self, data):
+    def on_state_notification(self, data) -> None:
         """ React on state notification from controller """
 
         state = data.get("state")

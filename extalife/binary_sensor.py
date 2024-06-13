@@ -1,6 +1,6 @@
 """Support for Exta Life binary sensor devices e.g. leakage sensor, door/window open sensor"""
 import logging
-from pprint import pformat
+
 from typing import (
     Any,
     Mapping
@@ -50,10 +50,10 @@ async def async_setup_entry(
     core: Core = Core.get(config_entry.entry_id)
     channels: list[dict[str, Any]] = core.get_channels(DOMAIN_BINARY_SENSOR)
 
-    _LOGGER.debug("Discovery: %s", pformat(channels))
+    _LOGGER.debug("Discovery: %s", channels)
     if channels:
         async_add_entities(
-            [ExtaLifeBinarySensor(channel_data, config_entry) for channel_data in channels]
+            [ExtaLifeBinarySensor(channel, config_entry) for channel in channels]
         )
 
     core.pop_channels(DOMAIN_BINARY_SENSOR)
@@ -62,10 +62,10 @@ async def async_setup_entry(
 class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
     """Representation of an ExtaLife binary sensors"""
 
-    def __init__(self, channel_data, config_entry: ConfigEntry):
-        super().__init__(channel_data, config_entry)
+    def __init__(self, channel, config_entry: ConfigEntry):
+        super().__init__(channel, config_entry)
 
-        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_BINARY_SENSOR_SENSOR, channel_data)
+        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_BINARY_SENSOR_SENSOR, channel)
 
     @property
     def is_on(self) -> bool | None:

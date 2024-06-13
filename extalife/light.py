@@ -3,7 +3,6 @@ Support for real Exta Life light controllers (RDP, RDM, SLR)
 and fake lights (on/off switches: ROP,ROM devices) mapped as light in HA
 """
 import logging
-from pprint import pformat
 from typing import (
     Any,
 )
@@ -30,7 +29,7 @@ from . import ExtaLifeChannel
 from .helpers.const import DOMAIN_VIRTUAL_LIGHT_SENSOR
 from .helpers.core import Core
 from .pyextalife import (       # pylint: disable=syntax-error
-    ExtaLifeAPI,
+    ExtaLifeAction,
     ExtaLifeDeviceModel,
     DEVICE_ARR_ALL_LIGHT
 )
@@ -164,10 +163,10 @@ async def async_setup_entry(
     core: Core = Core.get(config_entry.entry_id)
     channels: list[dict[str, Any]] = core.get_channels(DOMAIN_LIGHT)
 
-    _LOGGER.debug("Discovery: %s", pformat(channels))
+    _LOGGER.debug("Discovery: %s", channels)
     if channels:
         async_add_entities(
-            [ExtaLifeLight(channel_data, config_entry) for channel_data in channels]
+            [ExtaLifeLight(channel, config_entry) for channel in channels]
         )
 
     core.pop_channels(DOMAIN_LIGHT)
@@ -176,8 +175,8 @@ async def async_setup_entry(
 class ExtaLifeLight(ExtaLifeChannel, LightEntity):
     """Representation of an ExtaLife light controlling device."""
 
-    def __init__(self, channel_data: dict[str, Any], config_entry: ConfigEntry):
-        super().__init__(channel_data, config_entry)
+    def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
+        super().__init__(channel, config_entry)
 
         self._supported_features: LightEntityFeature = LightEntityFeature(0)
         self._effect_list = None
@@ -206,7 +205,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
 
         _LOGGER.debug("Light type: %s", repr(self.device_type))
 
-        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_LIGHT_SENSOR, channel_data)
+        self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_LIGHT_SENSOR, channel)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the switch."""
@@ -268,19 +267,19 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
             )  # mode - one of effects
 
         if not self.is_exta_free:
-            if await self.async_action(ExtaLifeAPI.ACTION_TURN_ON, **params):
+            if await self.async_action(ExtaLifeAction.EXTA_LIFE_TURN_ON, **params):
                 # update channel data with new values
                 data["power"] = 1
                 mode_val_new = params.get("mode_val")
                 if mode_val_new is not None:
-                    # convert new value to the format of the old value from channel_data
+                    # convert new value to the format of the old value from channel
                     params["mode_val"] = modeval_upd(mode_val, mode_val_new)
 
                 data.update(params)
                 self.async_schedule_update_ha_state()
         else:
-            if (await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_TURN_ON_PRESS, **params) and
-                    await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_TURN_ON_RELEASE, **params)):
+            if (await self.async_action(ExtaLifeAction.EXTA_FREE_TURN_ON_PRESS, **params) and
+                    await self.async_action(ExtaLifeAction.EXTA_FREE_TURN_ON_RELEASE, **params)):
                 self._assumed_on = True
                 self.schedule_update_ha_state()
 
@@ -299,13 +298,13 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
             params.update({"value": value})
 
         if not self.is_exta_free:
-            if await self.async_action(ExtaLifeAPI.ACTION_TURN_OFF, **params):
+            if await self.async_action(ExtaLifeAction.EXTA_LIFE_TURN_OFF, **params):
                 data["power"] = 0
                 data["mode"] = mode
                 self.async_schedule_update_ha_state()
         else:
-            if (await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_TURN_OFF_PRESS, **params) and
-                    await self.async_action(ExtaLifeAPI.ACTION_EXTA_FREE_TURN_OFF_RELEASE, **params)):
+            if (await self.async_action(ExtaLifeAction.EXTA_FREE_TURN_OFF_PRESS, **params) and
+                    await self.async_action(ExtaLifeAction.EXTA_FREE_TURN_OFF_RELEASE, **params)):
                 self._assumed_on = False
                 self.schedule_update_ha_state()
 
@@ -336,7 +335,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
     @property
     def supported_features(self) -> LightEntityFeature:
         """Flag supported features."""
-        # _LOGGER.debug("Supported flags: %s", self._supported_features)
+        _LOGGER.debug("Supported flags: %s", self._supported_features)
         return self._supported_features
 
     @property

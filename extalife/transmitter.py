@@ -1,6 +1,5 @@
 """Support for Exta Life transmitter devices"""
 import logging
-from pprint import pformat
 from typing import (
     Any,
 )
@@ -27,7 +26,7 @@ async def async_setup_entry(
     core = Core.get(config_entry.entry_id)
     channels = core.get_channels(DOMAIN_TRANSMITTER)
 
-    _LOGGER.debug("Discovery: %s", pformat(channels))
+    _LOGGER.debug("Discovery: %s", channels)
 
     core = Core.get(config_entry.entry_id)
     manager = core.storage_get(CORE_STORAGE_ID)  # transmitter_mgr
@@ -60,7 +59,7 @@ class ExtaLifeTransmitter(PseudoPlatform):
 
         self._event_processor = None
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
         core = Core.get(self._config_entry.entry_id)
@@ -73,7 +72,7 @@ class ExtaLifeTransmitter(PseudoPlatform):
         await super().async_will_remove_from_hass()
         self._signal_data_notif_remove_callback()
 
-    def _sync_state_notif_update_callback(self, data):
+    def _sync_state_notif_update_callback(self, data) -> None:
         if self.device:
             _LOGGER.debug("_sync_state_notif_update_callback: %s", data)
             self._device.controller_event(data)
@@ -106,13 +105,13 @@ class TransmitterManager:
         await self.register_device(transmitter)
         await transmitter.async_added_to_hass()
 
-    async def register_device(self, transmitter: ExtaLifeTransmitter):
+    async def register_device(self, transmitter: ExtaLifeTransmitter) -> None:
         """ Register transmitter in Device Registry """
 
         device = await self.device_manager.async_add(transmitter.device_type, transmitter.device_info)
         transmitter.assign_device(device)
 
-    async def unload_transmitters(self):
+    async def unload_transmitters(self) -> None:
         """ Unload transmitters: cleanup, unregister signals etc """
         for tr_id, transmitter in self._transmitters:
             await transmitter.async_will_remove_from_hass()
