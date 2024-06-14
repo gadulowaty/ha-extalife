@@ -43,6 +43,9 @@ ExtaLifeActionType = "ExtaLifeAction"
 ExtaLifeErrorType = "ExtaLifeError"
 ExtaLifeConnType = "ExtaLifeConn"
 
+ExtaLifeData = dict[str, Any]
+ExtaLifeDataList = list[ExtaLifeData]
+
 
 class ExtaLifeEvent(IntEnum):
     CONNECTED = 1,
@@ -623,9 +626,6 @@ DEVICE_ICON_ARR_LIGHT = [
     16,
     17
 ]
-
-ExtaLifeData = dict[str, Any]
-ExtaLifeDataList = list[ExtaLifeData]
 
 
 class ExtaLifeMessage:
