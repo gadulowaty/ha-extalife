@@ -43,21 +43,6 @@ async def options_change_callback(hass: HomeAssistant, config_entry: ConfigEntry
     core.data_manager.polling_task_configure()
 
 
-def import_executor_callback(module: str, func: str) -> Callable[[HomeAssistant, ConfigEntry], None] | None:
-
-    result = None
-    package = ".".join(__package__.split(".")[:-1])  # 1 level above current package
-    try:
-        _LOGGER.debug("_import_executor_callback(), module: %s, from: %s", module, package)
-        imp_module = importlib.import_module("." + module, package)
-
-        _LOGGER.debug("_import_executor_callback(), func: %s", func)
-        result = getattr(imp_module, func)
-    except Exception as err:
-        _LOGGER.warning("async_setup_custom_platforms(), failed to import module %s from package %s, %s",
-                        module, package, repr(err))
-    return result
-
 
 class Core:
 
@@ -124,6 +109,22 @@ class Core:
         self._storage = {}
 
         self._is_unloading = False
+
+    @staticmethod
+    def _import_executor_callback(module: str, func: str) -> Callable[[HomeAssistant, ConfigEntry], None] | None:
+
+        result = None
+        package = ".".join(__package__.split(".")[:-1])  # 1 level above current package
+        try:
+            _LOGGER.debug("_import_executor_callback(), module: %s, from: %s", module, package)
+            imp_module = importlib.import_module("." + module, package)
+
+            _LOGGER.debug("_import_executor_callback(), func: %s", func)
+            result = getattr(imp_module, func)
+        except Exception as err:
+            _LOGGER.warning("async_setup_custom_platforms(), failed to import module %s from package %s, %s",
+                            module, package, repr(err))
+        return result
 
     async def unload_entry_from_hass(self) -> bool:
         """Called when ConfigEntry is unloaded from Home Assistant"""
@@ -330,7 +331,7 @@ class Core:
     async def async_setup_custom_platform(self, platform: str):
         """Setup other, custom (pseudo)platforms"""
 
-        async_setup_entry = await self._hass.async_add_import_executor_job(import_executor_callback,
+        async_setup_entry = await self._hass.async_add_import_executor_job(self._import_executor_callback,
                                                                            platform, "async_setup_entry")
         if async_setup_entry is not None:
             await async_setup_entry(self.hass, self.config_entry)
@@ -345,7 +346,7 @@ class Core:
                 # virtual platforms does not have import module so cannot be unloaded
                 continue
 
-            async_unload_entry = await self._hass.async_add_import_executor_job(import_executor_callback,
+            async_unload_entry = await self._hass.async_add_import_executor_job(self._import_executor_callback,
                                                                                 platform, "async_unload_entry")
             if async_unload_entry is not None:
                 await async_unload_entry(self.hass, self.config_entry)
