@@ -15,6 +15,7 @@
     "config_backup": "mdi:archive-arrow-down",
     "config_restore": "mdi:archive-arrow-up",
     "restart": "mdi:restart",
-    "refresh_state": "mdi:sync"
+    "refresh_state": "mdi:sync",
+    "test_button": "mdi:button-pointer"
   }
 }

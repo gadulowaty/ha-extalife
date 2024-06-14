@@ -74,6 +74,7 @@ restart:
             name: "Entity"
             description: "Entity ID representing controller, which should be restarted"
             example: extalife.efc_01
+            required: true
             selector:
                 entity:
                     filter:
@@ -87,6 +88,7 @@ refresh_state:
             name: "Entity"
             description: "Entity ID representing controller"
             example: extalife.efc_01
+            required: true
             selector:
                 entity:
                     filter:
