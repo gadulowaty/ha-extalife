@@ -18,10 +18,6 @@ from homeassistant.components.climate.const import (
     HVACMode,
 )
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
-)
 
 from . import ExtaLifeChannel
 from .helpers.const import DOMAIN_VIRTUAL_CLIMATE_SENSOR
@@ -75,15 +71,6 @@ HA_MODE_ACTION = {
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(
-        hass: HomeAssistant,
-        config: ConfigType,
-        async_add_entities: AddEntitiesCallback,
-        discovery_info: DiscoveryInfoType | None = None) -> None:
-    """setup via configuration.yaml not supported anymore"""
-
-
-# noinspection PyUnusedLocal
 async def async_setup_entry(
         hass: HomeAssistant,
         config_entry: ConfigEntry,
@@ -91,15 +78,18 @@ async def async_setup_entry(
     """Set up an Exta Life heat controllers """
 
     core: Core = Core.get(config_entry.entry_id)
-    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_CLIMATE)
 
-    _LOGGER.debug("Discovery: %s", channels)
-    if channels:
-        async_add_entities(
-            [ExtaLifeClimate(channel, config_entry) for channel in channels]
-        )
+    async def async_load_entities() -> None:
 
-    core.pop_channels(DOMAIN_CLIMATE)
+        channels: list[dict[str, Any]] = core.get_channels(DOMAIN_CLIMATE)
+        _LOGGER.debug(f"Discovery ({DOMAIN_CLIMATE}): {channels}")
+        if channels:
+            async_add_entities([ExtaLifeClimate(channel, config_entry) for channel in channels])
+
+        core.pop_channels(DOMAIN_CLIMATE)
+        return None
+
+    await core.platform_register(DOMAIN_CLIMATE, async_load_entities)
 
 
 class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):

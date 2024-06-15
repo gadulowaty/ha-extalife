@@ -11,7 +11,6 @@ from typing import (
     Any,
     Mapping,
 )
-from pprint import pformat
 
 from homeassistant.components.sensor import (
     DOMAIN as DOMAIN_SENSOR,
@@ -37,6 +36,7 @@ from homeassistant.const import (
     LIGHT_LUX,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import (
     ConfigType,
@@ -275,15 +275,6 @@ SENSOR_TYPES: dict[SensorDeviceClass | ExtaSensorDeviceClass, ELSensorEntityDesc
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(
-        hass: HomeAssistant,
-        config: ConfigType,
-        async_add_entities: AddEntitiesCallback,
-        discovery_info: DiscoveryInfoType | None = None) -> None:
-    """setup via configuration.yaml not supported anymore"""
-
-
-# noinspection PyUnusedLocal
 async def async_setup_entry(
         hass: HomeAssistant,
         config_entry: ConfigEntry,
@@ -291,26 +282,30 @@ async def async_setup_entry(
     """Set up Exta Life sensors based on existing config."""
 
     core: Core = Core.get(config_entry.entry_id)
-    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_SENSOR)
 
-    _LOGGER.debug("Discovery: %s", channels)
-    if channels:
-        async_add_entities(
-            [ExtaLifeSensor(channel_data, config_entry) for channel_data in channels]
-        )
+    async def async_load_entities() -> None:
 
-    core.pop_channels(DOMAIN_SENSOR)
-
-    # time for virtual, entity sensors
-    for virtual_domain in DOMAIN_VIRTUAL_SENSORS:
-        channels = core.get_channels(virtual_domain)
-        _LOGGER.debug("Discovery (%s): %s", virtual_domain, pformat(channels))
+        channels: list[dict[str, Any]] = core.get_channels(DOMAIN_SENSOR)
+        _LOGGER.debug(f"Discovery ({DOMAIN_SENSOR}): {channels}")
         if channels:
-            async_add_entities(
-                [ExtaLifeVirtualSensor(channel, config_entry, virtual_domain) for channel in channels]
-            )
+            async_add_entities([ExtaLifeSensor(channel_data, config_entry) for channel_data in channels])
 
-        core.pop_channels(virtual_domain)
+        core.pop_channels(DOMAIN_SENSOR)
+
+        # time for virtual, entity sensors
+        for virtual_domain in DOMAIN_VIRTUAL_SENSORS:
+            channels = core.get_channels(virtual_domain)
+            _LOGGER.debug(f"Discovery ({virtual_domain}): {channels}")
+            if channels:
+                async_add_entities(
+                    [ExtaLifeVirtualSensor(channel, config_entry, virtual_domain) for channel in channels]
+                )
+
+            core.pop_channels(virtual_domain)
+
+        return None
+
+    await core.platform_register(DOMAIN_SENSOR, async_load_entities)
 
 
 class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
@@ -353,7 +348,7 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
         try:
             value = self.get_value_from_attr_path(self._config.value_path)
         except Exception as err:
-            _LOGGER.error("failed to read sensor native value, device_type=%s, %s", self.device_type.name, err)
+            _LOGGER.error(f"failed to read sensor native value, device_type={self.device_type.name}, {err}")
             value = 0
 
         if value:

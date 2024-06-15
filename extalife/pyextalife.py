@@ -19,6 +19,8 @@ from asyncio import (
 from asyncio.events import AbstractEventLoop
 from datetime import datetime
 from enum import (
+    auto,
+    Flag,
     IntEnum,
     StrEnum
 )
@@ -725,6 +727,15 @@ except ImportError:
     FAKE_RECEIVERS = FAKE_SENSORS = FAKE_TRANSMITTERS = []
 
 
+class ExtaLifeDeviceFilter(Flag):
+    RECEIVERS = auto()
+    SENSORS = auto()
+    TRANSMITTERS = auto()
+    EF_RECEIVER = auto()
+
+    ALL = RECEIVERS | SENSORS | TRANSMITTERS | EF_RECEIVER
+
+
 class ExtaLifeAPI:
     """ Main API class: wrapper for communication with controller """
 
@@ -1174,8 +1185,9 @@ class ExtaLifeAPI:
         if response:
             return response[0]
 
-    async def async_get_channels(self, include=(CHN_TYP_RECEIVERS, CHN_TYP_SENSORS, CHN_TYP_TRANSMITTERS,
-                                                CHN_TYP_EXTA_FREE_RECEIVERS)) -> ExtaLifeDataList:
+    # async def async_get_channels(self, include=(CHN_TYP_RECEIVERS, CHN_TYP_SENSORS, CHN_TYP_TRANSMITTERS,
+    #                                             CHN_TYP_EXTA_FREE_RECEIVERS)) -> ExtaLifeDataList:
+    async def async_get_channels(self, include: ExtaLifeDeviceFilter = ExtaLifeDeviceFilter.ALL):
         """
         Get list of dicts of Exta Life channels consisting of native Exta Life TCP JSON
         data, but with transformed data model. Each channel will have native channel info
@@ -1195,16 +1207,16 @@ class ExtaLifeAPI:
                         response.data.extend(more_data)
                     channels.extend(self._transform_channels(response.data, dummy_channel))
 
-        if self.CHN_TYP_RECEIVERS in include:
+        if ExtaLifeDeviceFilter.RECEIVERS in include:
             await _async_get_channels(ExtaLifeCmd.FETCH_RECEIVERS, more_data=FAKE_RECEIVERS)
 
-        if self.CHN_TYP_SENSORS in include:
+        if ExtaLifeDeviceFilter.SENSORS in include:
             await _async_get_channels(ExtaLifeCmd.FETCH_SENSORS, more_data=FAKE_SENSORS)
 
-        if self.CHN_TYP_TRANSMITTERS in include:
+        if ExtaLifeDeviceFilter.TRANSMITTERS in include:
             await _async_get_channels(ExtaLifeCmd.FETCH_TRANSMITTERS, True, more_data=FAKE_TRANSMITTERS)
 
-        if self.CHN_TYP_EXTA_FREE_RECEIVERS in include:
+        if ExtaLifeDeviceFilter.EF_RECEIVER in include:
             await _async_get_channels(ExtaLifeCmd.FETCH_EXTA_FREE)
 
         return channels

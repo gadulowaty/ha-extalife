@@ -30,15 +30,18 @@ async def async_setup_entry(
     """Set up Exta Life covers based on existing config."""
 
     core: Core = Core.get(config_entry.entry_id)
-    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_UPDATE)
 
-    _LOGGER.debug("Discovery: %s", channels)
-    if channels:
-        async_add_entities(
-            [ExtaLifeUpdate(channel_data, config_entry) for channel_data in channels]
-        )
+    async def async_load_entities() -> None:
 
-    core.pop_channels(DOMAIN_UPDATE)
+        channels: list[dict[str, Any]] = core.get_channels(DOMAIN_UPDATE)
+        _LOGGER.debug(f"Discovery ({DOMAIN_UPDATE}) : {channels}")
+        if channels:
+            async_add_entities([ExtaLifeUpdate(channel_data, config_entry) for channel_data in channels])
+
+        core.pop_channels(DOMAIN_UPDATE)
+        return None
+
+    await core.platform_register(DOMAIN_UPDATE, async_load_entities)
 
 
 class ExtaLifeUpdate(ExtaLifeChannel, UpdateEntity):

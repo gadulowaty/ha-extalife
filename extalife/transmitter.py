@@ -24,20 +24,24 @@ async def async_setup_entry(
     """Set up Exta Life transmitters based on existing config."""
 
     core = Core.get(config_entry.entry_id)
-    channels = core.get_channels(DOMAIN_TRANSMITTER)
 
-    _LOGGER.debug("Discovery: %s", channels)
+    async def async_loader_entities() -> None:
 
-    core = Core.get(config_entry.entry_id)
-    manager = core.storage_get(CORE_STORAGE_ID)  # transmitter_mgr
-    if manager is None:
-        manager = TransmitterManager(core.config_entry)
-        core.storage_add(CORE_STORAGE_ID, manager)
+        channels = core.get_channels(DOMAIN_TRANSMITTER)
+        _LOGGER.debug(f"Discovery ({DOMAIN_TRANSMITTER}): {channels}")
 
-    for transmitter in channels:
-        await manager.add(transmitter)
+        if channels:
+            manager = core.storage_get(CORE_STORAGE_ID)  # transmitter_mgr
+            if manager is None:
+                manager = TransmitterManager(core.config_entry)
+                core.storage_add(CORE_STORAGE_ID, manager)
 
-    core.pop_channels(DOMAIN_TRANSMITTER)
+            for transmitter in channels:
+                await manager.add(transmitter)
+
+        core.pop_channels(DOMAIN_TRANSMITTER)
+
+    await core.platform_register(DOMAIN_TRANSMITTER, async_loader_entities)
 
 
 # noinspection PyUnusedLocal
@@ -74,7 +78,7 @@ class ExtaLifeTransmitter(PseudoPlatform):
 
     def _sync_state_notif_update_callback(self, data) -> None:
         if self.device:
-            _LOGGER.debug("_sync_state_notif_update_callback: %s", data)
+            _LOGGER.debug(f"_sync_state_notif_update_callback: {data}")
             self._device.controller_event(data)
 
         # pass notification to device for processing

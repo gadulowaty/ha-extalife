@@ -121,7 +121,7 @@ class ExtaLifeServices:
 
         core = self._get_core(entity_id)
         if core and core.api:
-            asyncio.run_coroutine_threadsafe(core.data_manager.async_polling_task_execute(), self._hass.loop)
+            asyncio.run_coroutine_threadsafe(core.channel_manager.async_polling_task_execute(), self._hass.loop)
 
     def _get_backup_path(self, path: str | None) -> str:
         if not path:

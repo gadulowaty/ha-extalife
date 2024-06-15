@@ -41,15 +41,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(
-        hass: HomeAssistant,
-        config: ConfigType,
-        async_add_entities: AddEntitiesCallback,
-        discovery_info: DiscoveryInfoType | None = None) -> None:
-    """setup via configuration.yaml not supported anymore"""
-
-
-# noinspection PyUnusedLocal
 async def async_setup_entry(
         hass: HomeAssistant,
         config_entry: ConfigEntry,
@@ -57,15 +48,18 @@ async def async_setup_entry(
     """Set up Exta Life covers based on existing config."""
 
     core: Core = Core.get(config_entry.entry_id)
-    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_COVER)
 
-    _LOGGER.debug("Discovery: %s", channels)
-    if channels:
-        async_add_entities(
-            [ExtaLifeCover(channel, config_entry) for channel in channels]
-        )
+    async def async_load_entities() -> None:
 
-    core.pop_channels(DOMAIN_COVER)
+        channels: list[dict[str, Any]] = core.get_channels(DOMAIN_COVER)
+        _LOGGER.debug(f"Discovery ({DOMAIN_COVER}): {channels}")
+        if channels:
+            async_add_entities([ExtaLifeCover(channel, config_entry) for channel in channels])
+
+        core.pop_channels(DOMAIN_COVER)
+        return None
+
+    await core.platform_register(DOMAIN_COVER, async_load_entities)
 
 
 class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
@@ -121,7 +115,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
         val = self.channel_data.get("value")
         pos = val if self.is_inverted_control else 100-val
 
-        _LOGGER.debug("current_cover_position for cover: %s. Model: %s, returned to HA: %s", self.entity_id, val, pos)
+        _LOGGER.debug(f"current_cover_position for cover: {self.entity_id}. Model: {val}, returned to HA: {pos}")
         return pos
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
@@ -130,7 +124,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
         pos = int(kwargs.get(ATTR_POSITION))
         value = pos if self.is_inverted_control else 100-pos
 
-        _LOGGER.debug("set_cover_position for cover: %s. From HA: %s, model: %s", self.entity_id, pos, value)
+        _LOGGER.debug(f"set_cover_position for cover: {self.entity_id}. From HA: {pos}, model: {value}")
         if await self.async_action(ExtaLifeAction.EXTA_LIFE_SET_POS, value=value):
             data["value"] = value
             self.async_schedule_update_ha_state()
@@ -143,16 +137,13 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
     @property
     def is_closed(self) -> bool | None:
         """Return if the cover is closed (affects roller icon and entity status)."""
-        position = self.channel_data.get("value")
+        pos = self.channel_data.get("value")
         gate_state = self.channel_data.get("channel_state")
 
-        if position is not None:
-            pos = ExtaLifeCover.POS_CLOSED
-            _LOGGER.debug("is_closed for cover: %s. model: %s, returned to HA: %s",
-                          self.entity_id,
-                          position,
-                          position == pos)
-            return position == pos
+        if pos is not None:
+            expect = ExtaLifeCover.POS_CLOSED
+            _LOGGER.debug(f"is_closed for cover: {self.entity_id}. model: {pos}, returned to HA: {pos == expect}")
+            return pos == expect
 
         if gate_state is not None:
             return gate_state == 3
@@ -175,7 +166,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
 
             if await self.async_action(action, value=pos):
                 data["value"] = pos
-                _LOGGER.debug("open_cover for cover: %s. model: %s", self.entity_id, pos)
+                _LOGGER.debug(f"open_cover for cover: {self.entity_id}. model: {pos}")
                 self.async_schedule_update_ha_state()
         else:
             if (await self.async_action(ExtaLifeAction.EXTA_FREE_UP_PRESS) and
@@ -193,7 +184,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
                 action = ExtaLifeAction.EXTA_LIFE_GATE_POS
             if await self.async_action(action, value=pos):
                 data["value"] = pos
-                _LOGGER.debug("close_cover for cover: %s. model: %s", self.entity_id, pos)
+                _LOGGER.debug(f"close_cover for cover: {self.entity_id}. model: {pos}")
                 self.async_schedule_update_ha_state()
 
         elif ExtaLifeDeviceModel(self.channel_data.get("type")) != ExtaLifeDeviceModel.ROB01:

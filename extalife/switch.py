@@ -27,15 +27,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(
-        hass: HomeAssistant,
-        config: ConfigType,
-        async_add_entities: AddEntitiesCallback,
-        discovery_info: DiscoveryInfoType | None = None) -> None:
-    """setup via configuration.yaml not supported anymore"""
-
-
-# noinspection PyUnusedLocal
 async def async_setup_entry(
         hass: HomeAssistant,
         config_entry: ConfigEntry,
@@ -43,15 +34,18 @@ async def async_setup_entry(
     """Set up Exta Life switches based on existing config."""
 
     core: Core = Core.get(config_entry.entry_id)
-    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_SWITCH)
 
-    _LOGGER.debug("Discovery: %s", channels)
-    if channels:
-        async_add_entities(
-            [ExtaLifeSwitch(channel, config_entry) for channel in channels]
-        )
+    async def async_load_entities() -> None:
 
-    core.pop_channels(DOMAIN_SWITCH)
+        channels: list[dict[str, Any]] = core.get_channels(DOMAIN_SWITCH)
+        _LOGGER.debug(f"Discovery ({DOMAIN_SWITCH}): {channels}")
+        if channels:
+            async_add_entities([ExtaLifeSwitch(channel, config_entry) for channel in channels])
+
+        core.pop_channels(DOMAIN_SWITCH)
+        return None
+
+    await core.platform_register(DOMAIN_SWITCH, async_load_entities)
 
 
 class ExtaLifeSwitch(ExtaLifeChannel, SwitchEntity):

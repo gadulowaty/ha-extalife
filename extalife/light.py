@@ -161,15 +161,19 @@ async def async_setup_entry(
     """Set up an Exta Life light based on existing config."""
 
     core: Core = Core.get(config_entry.entry_id)
-    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_LIGHT)
 
-    _LOGGER.debug("Discovery: %s", channels)
-    if channels:
-        async_add_entities(
-            [ExtaLifeLight(channel, config_entry) for channel in channels]
-        )
+    async def async_load_entities() -> None:
 
-    core.pop_channels(DOMAIN_LIGHT)
+        channels: list[dict[str, Any]] = core.get_channels(DOMAIN_LIGHT)
+
+        _LOGGER.debug(f"Discovery ({DOMAIN_LIGHT}): {channels}")
+        if channels:
+            async_add_entities([ExtaLifeLight(channel, config_entry) for channel in channels])
+
+        core.pop_channels(DOMAIN_LIGHT)
+        return None
+
+    await core.platform_register(DOMAIN_LIGHT, async_load_entities)
 
 
 class ExtaLifeLight(ExtaLifeChannel, LightEntity):

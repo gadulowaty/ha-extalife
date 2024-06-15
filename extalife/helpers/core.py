@@ -4,8 +4,10 @@ import importlib
 import datetime
 from typing import (
     Any,
+    Awaitable,
     Callable,
 )
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -40,8 +42,7 @@ async def options_change_callback(hass: HomeAssistant, config_entry: ConfigEntry
     """Options update listener"""
 
     core = Core.get(config_entry.entry_id)
-    core.data_manager.polling_task_configure()
-
+    core.channel_manager.polling_task_configure()
 
 
 class Core:
@@ -90,12 +91,12 @@ class Core:
             on_connect_callback=self._on_connect_callback,
             on_disconnect_callback=self._on_disconnect_callback,
         )
-        self._signal_callbacks = []
-        self._track_time_callbacks = []
+        self._signal_callbacks: dict[str, Callable[[], None]] = {}
+        self._track_time_callbacks: list[Callable] = []
         self._platforms: dict[str, list[dict[str, Any]]] = {}
+        self._platform_loader: dict[str, Callable[[], Awaitable]] = {}
         self._platforms_cust: dict[str, list[dict[str, Any]]] = {}
-        self._data_manager: ChannelDataManager = ChannelDataManager(self.hass, self.config_entry)
-        self._api.set_notification_callback(self._on_status_notification_callback)
+        self._channel_manager: ChannelDataManager = ChannelDataManager(self.hass, self.config_entry)
         self._queue = asyncio.Queue()
         self._queue_task = Core.get_hass().loop.create_task(self._queue_worker())
         self._signals = {}
@@ -110,8 +111,27 @@ class Core:
 
         self._is_unloading = False
 
+        self._api.set_notification_callback(self._on_status_notification_callback)
+
+    async def platform_load(self, platform: str) -> bool:
+        """Check if platform has been loaded if so will load awaiting channels and return true otherwise false"""
+
+        if platform in self._platform_loader:
+            _LOGGER.debug(f"Loading entities for {platform}")
+            await self._platform_loader[platform]()
+            return True
+
+        return False
+
+    async def platform_register(self, platform: str, async_load_entities: Callable[[], Awaitable]) -> None:
+        """registers platform loader for new entities and try to load all waiting channels"""
+
+        _LOGGER.debug(f"Platform '{platform}' has been registered")
+        self._platform_loader.setdefault(platform, async_load_entities)
+        await self.platform_load(platform)
+
     @staticmethod
-    def _import_executor_callback(module: str, func: str) -> Callable[[HomeAssistant, ConfigEntry], None] | None:
+    def _import_executor_callback(module: str, func: str) -> Callable[[HomeAssistant, ConfigEntry], Awaitable] | None:
 
         result = None
         package = ".".join(__package__.split(".")[:-1])  # 1 level above current package
@@ -131,7 +151,7 @@ class Core:
         self._is_unloading = True
 
         await Core._callbacks_cleanup(self.config_entry.entry_id)
-        await self.data_manager.async_polling_task_execute(False, False)
+        await self.channel_manager.async_polling_task_execute(False, False)
 
         await self.api.async_disconnect()
 
@@ -162,7 +182,7 @@ class Core:
         await cls._callbacks_cleanup()
         for inst in cls._inst.values():
             await Core._callbacks_cleanup(inst.config_entry.entry_id)
-            await inst.data_manager.async_polling_task_execute(False, False)
+            await inst.channel_manager.async_polling_task_execute(False, False)
 
             await inst.api.async_disconnect()
 
@@ -200,7 +220,7 @@ class Core:
     async def _on_connect_callback(self) -> None:
         """Execute actions on (re)connection to controller"""
 
-        await self.data_manager.async_polling_task_execute()
+        await self.channel_manager.async_polling_task_execute()
 
         # Update controller software info
         if self._controller_entity is not None:
@@ -212,7 +232,7 @@ class Core:
         if self._is_unloading or self._is_stopping:
             return 0
 
-        await self.data_manager.async_polling_task_execute(False, False)
+        await self.channel_manager.async_polling_task_execute(False, False)
 
         # Update controller software info
         if self._controller_entity is not None:
@@ -226,7 +246,7 @@ class Core:
 
         # forward only state notifications to data manager to update channels
         if notification.command == ExtaLifeCmd.CONTROL_DEVICE:
-            self._data_manager.on_notify(notification[0])
+            self.channel_manager.on_notify(notification[0])
 
         self._put_notification_on_event_bus(notification)
 
@@ -261,8 +281,8 @@ class Core:
         return self._api
 
     @property
-    def data_manager(self) -> ChannelDataManagerType:
-        return self._data_manager
+    def channel_manager(self) -> ChannelDataManagerType:
+        return self._channel_manager
 
     @property
     def config_entry(self) -> ConfigEntry:
@@ -277,14 +297,14 @@ class Core:
         return self._device_manager
 
     @property
-    def signal_remove_callbacks(self):
+    def signal_remove_callbacks(self) -> dict[str, Callable]:
         return self._signal_callbacks
 
-    def add_signal_remove_callback(self, callback, cb_type: str) -> None:
+    def add_signal_remove_callback(self, callback: Callable, cb_type: str) -> None:
         self._signal_callbacks[cb_type] = callback
 
     def unregister_signal_callbacks(self) -> None:
-        for callback in self.signal_remove_callbacks:
+        for cb_type, callback in self.signal_remove_callbacks.items():
             callback()
 
     def unregister_track_time_callbacks(self) -> None:
@@ -321,7 +341,7 @@ class Core:
             channels = self._platforms_cust.get(platform)
         return channels
 
-    def pop_channels(self, platform: str):
+    def pop_channels(self, platform: str) -> None:
         """Delete list of channel data per platform"""
         if self._platforms.get(platform) is None:
             self._platforms_cust[platform] = []
@@ -331,8 +351,10 @@ class Core:
     async def async_setup_custom_platform(self, platform: str):
         """Setup other, custom (pseudo)platforms"""
 
-        async_setup_entry = await self._hass.async_add_import_executor_job(self._import_executor_callback,
-                                                                           platform, "async_setup_entry")
+        async_setup_entry: Callable[[HomeAssistant, ConfigEntry], Awaitable] = \
+            await self._hass.async_add_import_executor_job(self._import_executor_callback,
+                                                           platform, "async_setup_entry")
+
         if async_setup_entry is not None:
             await async_setup_entry(self.hass, self.config_entry)
             _LOGGER.debug("Custom platform '%s' has been configured")
@@ -346,22 +368,25 @@ class Core:
                 # virtual platforms does not have import module so cannot be unloaded
                 continue
 
-            async_unload_entry = await self._hass.async_add_import_executor_job(self._import_executor_callback,
-                                                                                platform, "async_unload_entry")
+            async_unload_entry: Callable[[HomeAssistant, ConfigEntry], Awaitable] = \
+                await self._hass.async_add_import_executor_job(self._import_executor_callback,
+                                                               platform, "async_unload_entry")
             if async_unload_entry is not None:
                 await async_unload_entry(self.hass, self.config_entry)
 
-    def storage_add(self, inst_id: str, inst_obj):
+    def storage_add(self, inst_id: str, inst_obj) -> None:
         self._storage.update({inst_id: inst_obj})
 
-    def storage_get(self, inst_id: str):
-        self._storage.get(inst_id)
+    def storage_get(self, inst_id: str) -> Any:
+        return self._storage.get(inst_id)
 
-    def storage_remove(self, inst_id: str):
+    def storage_remove(self, inst_id: str) -> None:
         self._storage.pop(inst_id)
 
-    def async_track_time_interval(self, callback, interval: datetime.timedelta):
+    def async_track_time_interval(
+            self, callback: Callable[[datetime], Awaitable | None], interval: datetime.timedelta):
         """Add a listener that fires repetitively at every timedelta interval."""
+
         remove_callback = async_track_time_interval(self.hass, callback, interval)
         self._track_time_callbacks.append(remove_callback)
 

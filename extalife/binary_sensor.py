@@ -32,15 +32,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # noinspection PyUnusedLocal
-async def async_setup_platform(
-        hass: HomeAssistant,
-        config_entry: ConfigType,
-        async_add_entities: AddEntitiesCallback,
-        discovery_info: DiscoveryInfoType | None = None) -> None:
-    """"setup via configuration.yaml not supported anymore"""
-
-
-# noinspection PyUnusedLocal
 async def async_setup_entry(
         hass: HomeAssistant,
         config_entry: ConfigEntry,
@@ -48,15 +39,18 @@ async def async_setup_entry(
     """Set up Exta Life binary sensors based on existing config."""
 
     core: Core = Core.get(config_entry.entry_id)
-    channels: list[dict[str, Any]] = core.get_channels(DOMAIN_BINARY_SENSOR)
 
-    _LOGGER.debug("Discovery: %s", channels)
-    if channels:
-        async_add_entities(
-            [ExtaLifeBinarySensor(channel, config_entry) for channel in channels]
-        )
+    async def async_load_entities() -> None:
 
-    core.pop_channels(DOMAIN_BINARY_SENSOR)
+        channels: list[dict[str, Any]] = core.get_channels(DOMAIN_BINARY_SENSOR)
+        _LOGGER.debug(f"Discovery: ({DOMAIN_BINARY_SENSOR}): {channels}")
+        if channels:
+            async_add_entities([ExtaLifeBinarySensor(channel, config_entry) for channel in channels])
+
+        core.pop_channels(DOMAIN_BINARY_SENSOR)
+        return None
+
+    await core.platform_register(DOMAIN_BINARY_SENSOR, async_load_entities)
 
 
 class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
@@ -86,10 +80,7 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
             value = state
 
         _LOGGER.debug(
-            "state update 'is_on' for entity: %s, id: %s. Status to be updated: %s",
-            self.entity_id,
-            self.channel_id,
-            value,
+            f"state update 'is_on' for entity: {self.entity_id}, id: {self.channel_id}. Status to be updated: {value}",
         )
         return value
 
@@ -135,10 +126,7 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
         ch_data["value_3"] = state
 
         _LOGGER.debug(
-            "on_state_notification for entity: %s, id: %s. Status to be updated: %s",
-            self.entity_id,
-            self.channel_id,
-            state,
+            f"on_state_notification for entity: {self.entity_id}, id: {self.channel_id}. Status to be updated: {state}",
         )
 
         # update only if notification data contains new status; prevent HS event bus overloading
