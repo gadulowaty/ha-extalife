@@ -41,7 +41,6 @@ from .pyextalife import (
     ExtaLifeAPI,
     ExtaLifeConnParams,
     ExtaLifeData,
-    ExtaLifeDeviceFilter,
     ExtaLifeDeviceModel,
     ExtaLifeDeviceModelName,
     ExtaLifeMap,
@@ -316,52 +315,49 @@ async def initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
 class ChannelDataManager:
     """Get the latest data from EFC-01, call device discovery, handle status notifications."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-        """Initialize the data object."""
-        self.data = None
+    def __init__(self, core: Core, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+        """Initialize the Channel Data Manager object."""
+
+        self._core: Core = core
         self._hass: HomeAssistant = hass
         self._config_entry: ConfigEntry = config_entry
-        self._listeners = []
 
-        self.channels_indx = {}
-        self._registered_channels: list[str] = []
-        self._polling_task_remove: Callable[[], None] | None = None
+        self._channels_data: dict[str, dict[str, Any]] = {}
+        self._channels_known: list[str] = []
+        self._polling_task_shutdown: Callable[[], None] | None = None
 
-    def _registered_channel(self, channel_id: str) -> bool:
+    def _channel_known(self, channel_id: str) -> bool:
         """append channel_id to list of known channels
         returns true if channel is not known and false otherwise"""
 
-        if channel_id not in self._registered_channels:
-            self._registered_channels.append(channel_id)
+        if channel_id not in self._channels_known:
+            self._channels_known.append(channel_id)
             return False
         return True
 
-    @property
-    def core(self) -> Core:
-        return Core.get(self._config_entry.entry_id)
+    def get_channel_data(self, channel_id: str) -> dict[str, Any] | None:
+        """get data associated with requested channel_id"""
 
-    @property
-    def controller(self) -> ExtaLifeAPI:
-        return self.core.api
+        # channel data manager contains PyExtaLife API channel data dict value pair: {("id"): ("data")}
+        return self._channels_data.get(channel_id)
 
     def on_notify(self, data: ExtaLifeData) -> None:
         _LOGGER.debug(f"Received status change notification from controller: {data}")
 
-        channel = data.get("channel", "#")
-        channel_id = str(data.get("id")) + "-" + str(channel)
+        channel_id: str = ExtaLifeAPI.device_make_channel_id(data)
 
         # inform HA entity of state change via notification
-        signal = ExtaLifeChannel.signal_get_id_for_notification(channel_id)
-        if channel != "#":
-            self.core.async_signal_send(signal, data)
+        signal: str = ExtaLifeChannel.signal_get_id_for_notification(channel_id)
+        if ExtaLifeAPI.device_has_sub_channels(channel_id):
+            self._core.async_signal_send(signal, data)
         else:
-            self.core.async_signal_send_sync(signal, data)
+            self._core.async_signal_send_sync(signal, data)
 
-    def update_channel(self, channel_id: str, channel_data: dict[str, Any]) -> None:
+    def update_channel_data(self, channel_id: str, channel_data: dict[str, Any]) -> None:
         """Update data of a channel e.g. after notification data received and processed
         by an entity"""
 
-        self.channels_indx.update({channel_id: channel_data})
+        self._channels_data.update({channel_id: channel_data})
 
     async def async_polling_task_execute(self, poll_now: bool = True, poll_periodic: bool = True) -> None:
         """Executes status polling triggered externally, not via periodic callback + resets next poll time"""
@@ -374,39 +370,38 @@ class ChannelDataManager:
         if poll_periodic:
             self.polling_task_configure()
 
+    # noinspection PyUnusedLocal
     async def _async_polling_task(self, now: datetime = None) -> None:
         """Get the latest device&channel status data from EFC-01.
         This method is called from HA task scheduler via async_track_time_interval"""
 
-        _LOGGER.debug(f"[{self.core.config_entry.title}] Executing EFC-01 status polling")
         # use Exta Life TCP communication class
+        _LOGGER.debug(f"[{self._core.config_entry.title}] Executing EFC-01 status polling")
 
         # if connection error or other - will receive None
         # otherwise it contains a list of channels
-
-        channels = await self.controller.async_get_channels()
-
+        channels: list[dict[str, Any]] = await self._core.api.async_get_channels()
         if channels is None or len(channels) == 0:
-            _LOGGER.warning(f"[{self.core.config_entry.title}] No Channels could be obtained from the controller")
+            _LOGGER.warning(f"[{self._core.config_entry.title}] No Channels could be obtained from the controller")
             return
 
         # create indexed access: dict from list element
         # dict key = "data" section
         for channel in channels:
-            self.update_channel(channel["id"], channel["data"])
+            self.update_channel_data(channel["id"], channel["data"])
 
-        self.core.async_signal_send(SIGNAL_DATA_UPDATED)
+        self._core.async_signal_send(SIGNAL_DATA_UPDATED)
 
-        _LOGGER.debug(f"[{self.core.config_entry.title}] Status for {len(self.channels_indx)} devices updated")
+        _LOGGER.debug(f"[{self._core.config_entry.title}] Status for {len(self._channels_data)} devices updated")
 
         await self.async_discover_devices()
 
     def polling_task_stop(self) -> None:
         """Stop status polling task scheduler"""
-        if self._polling_task_remove is not None:
-            self._polling_task_remove()
+        if self._polling_task_shutdown is not None:
+            self._polling_task_shutdown()
             _LOGGER.debug("Polling task has been removed")
-        self._polling_task_remove = None
+        self._polling_task_shutdown = None
 
     def polling_task_configure(self) -> None:
         """(Re)set periodic callback period based on options"""
@@ -414,119 +409,115 @@ class ChannelDataManager:
         self.polling_task_stop()
 
         # register callback for periodic status update polling + device discovery
-        interval = self._config_entry.options.get(OPTIONS_GENERAL).get(
+        interval: int = self._config_entry.options.get(OPTIONS_GENERAL).get(
             OPTIONS_GENERAL_POLL_INTERVAL
         )
 
         _LOGGER.debug(f"Periodic poll task interval has been set to {interval} minute(s)")
-        self._polling_task_remove = self.core.async_track_time_interval(
+        self._polling_task_shutdown = self._core.async_track_time_interval(
             self._async_polling_task, timedelta(minutes=interval)
         )
 
     async def async_discover_devices(self) -> None:
         """Fetch / refresh device data & discover devices and register them in Home Assistant."""
 
-        component_configs: dict = {}
-        other_configs = {}
+        std_platforms_channels: dict[str, list[dict[str, Any]]] = {}
+        usr_platforms_channels: dict[str, list[dict[str, Any]]] = {}
+
+        entities: int = 0
+        light_icons_list: list[int] = self._config_entry.options.get(DOMAIN_LIGHT).get(OPTIONS_LIGHT_ICONS_LIST)
 
         # get data from the ChannelDataManager object stored in HA object data
+        for channel_id, channel_data in self._channels_data.items():  # -> dict id:data
 
-        entities = 0
-        for channel_id, channel_data in self.channels_indx.items():  # -> dict id:data
-
-            # do discovery only for newly discovered devices
-            if self._registered_channel(channel_id):
+            # do discovery only for newly discovered devices and not known devices
+            if self._channel_known(channel_id):
                 continue
 
-            channel = {"id": channel_id, "data": channel_data}
-            device_type = channel_data.get("type")
-            component_name = None
+            channel: dict[str, Any] = {"id": channel_id, "data": channel_data}
+            device_type: ExtaLifeDeviceModel = ExtaLifeDeviceModel(channel_data.get("type"))
+            platform_name: str = ""
 
             # skip some devices that are not to be shown nor controlled by HA
             if device_type in DEVICE_ARR_ALL_IGNORE:
                 continue
 
             if device_type in DEVICE_ARR_ALL_SWITCH:
-                icon = channel["data"]["icon"]
-                if icon in self._config_entry.options.get(DOMAIN_LIGHT).get(
-                    OPTIONS_LIGHT_ICONS_LIST
-                ):
-                    component_name = DOMAIN_LIGHT
-                else:
-                    component_name = DOMAIN_SWITCH
+                platform_name = DOMAIN_LIGHT if channel["data"]["icon"] in light_icons_list else DOMAIN_SWITCH
 
             elif device_type in DEVICE_ARR_ALL_LIGHT:
-                component_name = DOMAIN_LIGHT
+                platform_name = DOMAIN_LIGHT
 
             elif device_type in DEVICE_ARR_ALL_COVER:
-                component_name = DOMAIN_COVER
+                platform_name = DOMAIN_COVER
 
             elif device_type in DEVICE_ARR_ALL_SENSOR_MEAS:
-                component_name = DOMAIN_SENSOR
+                platform_name = DOMAIN_SENSOR
 
             elif device_type in DEVICE_ARR_ALL_SENSOR_BINARY:
-                component_name = DOMAIN_BINARY_SENSOR
+                platform_name = DOMAIN_BINARY_SENSOR
 
             elif device_type in DEVICE_ARR_ALL_SENSOR_MULTI:
-                component_name = DOMAIN_SENSOR
+                platform_name = DOMAIN_SENSOR
 
             elif device_type in DEVICE_ARR_ALL_CLIMATE:
-                component_name = DOMAIN_CLIMATE
+                platform_name = DOMAIN_CLIMATE
 
             elif device_type in DEVICE_ARR_ALL_TRANSMITTER:
-                other_configs.setdefault(DOMAIN_TRANSMITTER, []).append(channel)
+                usr_platforms_channels.setdefault(DOMAIN_TRANSMITTER, []).append(channel)
                 continue
 
-            if component_name is None:
+            if not platform_name:
                 _LOGGER.warning(f"Unsupported device type: {device_type}, channel id: {channel["id"]}")
                 continue
 
-            component_configs.setdefault(component_name, []).append(channel)
+            std_platforms_channels.setdefault(platform_name, []).append(channel)
             entities += 1
 
         _LOGGER.debug(f"Exta Life devices found during discovery: {entities}")
 
         # Load discovered devices
 
-        channels_for_update: list[dict[str, Any]] = []
+        updatable_channels: list[dict[str, Any]] = []
         uniq_serials: list[str] = []
-        for component_name, channels in component_configs.items():
+        for platform_name, channels in std_platforms_channels.items():
             for channel in channels:
                 serial_no = str(channel["data"]["serial"])
                 if serial_no not in uniq_serials:
-                    channels_for_update.append(channel)
+                    updatable_channels.append(channel)
                     uniq_serials.append(serial_no)
 
-        if len(channels_for_update) > 0:
-            component_configs.setdefault(DOMAIN_UPDATE, channels_for_update)
+        if len(updatable_channels) > 0:
+            std_platforms_channels.setdefault(DOMAIN_UPDATE, updatable_channels)
             _LOGGER.debug(f"Found {len(uniq_serials)} devices for updates monitoring")
 
         # can happen we don't have any sensors, so we need to put an empty list to trigger
         # creation of virtual sensors (if any) for
-        component_configs.setdefault(DOMAIN_SENSOR, [])
+        std_platforms_channels.setdefault(DOMAIN_SENSOR, [])
 
         # sensors must be last as platforms will delegate their attributes to virtual sensors
-        component_configs[DOMAIN_SENSOR] = component_configs.pop(DOMAIN_SENSOR)
+        std_platforms_channels[DOMAIN_SENSOR] = std_platforms_channels.pop(DOMAIN_SENSOR)
 
-        components: list[str] = []
-        for component_name, channels in component_configs.items():
+        # this list will contain all platforms that require setup
+        platforms: list[str] = []
+        for platform_name, channels in std_platforms_channels.items():
             # store array of channels (variable 'channels') for each platform
-            self.core.push_channels(component_name, channels)
+            self._core.push_channels(platform_name, channels)
             # check if platform has been loaded. If not add to list if platform requiring
             # setup, otherwise load oper already added new channels for platform
-            if not await self.core.platform_load(component_name):
-                components.append(component_name)
+            if not await self._core.platform_load(platform_name):
+                platforms.append(platform_name)
 
-        if len(components) > 0:
+        if len(platforms) > 0:
             # 'sync' call to synchronize channels' stack with platform setup
-            _LOGGER.debug(f"Forward setup for {components}")
-            await self._hass.config_entries.async_forward_entry_setups(self._config_entry, components)
+            _LOGGER.debug(f"Forward setup for {platforms}")
+            await self._hass.config_entries.async_forward_entry_setups(self._config_entry, platforms)
 
         # setup pseudo-platforms
-        for component_name, channels in other_configs.items():
+        for platform_name, channels in usr_platforms_channels.items():
             # store array of channels (variable 'channels') for each platform
-            self.core.push_channels(component_name, channels, True)
-            self._hass.async_create_task(self.core.async_setup_custom_platform(component_name))
+            self._core.push_channels(platform_name, channels, True)
+            self._hass.async_create_task(self._core.async_setup_custom_platform(platform_name))
 
 
 class ExtaLifeChannel(Entity):
@@ -554,14 +545,11 @@ class ExtaLifeChannel(Entity):
 
     async def async_update(self) -> None:
         """Call to update state."""
-        # channel data manager contains PyExtaLife API channel data dict value pair: {("id"): ("data")}
-        channel_indx = self.channel_manager.channels_indx
 
         # read "data" section/dict by channel id
-        data = channel_indx.get(self.channel_id)
+        data = self.channel_manager.get_channel_data(self.channel_id)
 
         _LOGGER.debug(f"async_update() for entity: {self.entity_id}, data to be updated: {data}")
-
         if data is None:
             self.data_available = False
             return
@@ -570,12 +558,12 @@ class ExtaLifeChannel(Entity):
         self.channel_data = data
 
     def sync_data_update_ha(self) -> None:
-        """Performs update of Data Manager data with Entity data and calls HA state update.
+        """Performs update of Channel Data Manager with Entity data and calls HA state update.
         This is useful e.g. when Entity receives notification update, processes it and
-        then must update its state. For consistency reasons - Data Manager is updated and then
+        then must update its state. For consistency reasons - Channel Data Manager is updated and then
         HA status update is scheduled"""
 
-        self.channel_manager.update_channel(self.channel_id, self.channel_data)
+        self.channel_manager.update_channel_data(self.channel_id, self.channel_data)
         self.async_schedule_update_ha_state(True)
 
     def _get_virtual_sensors(self) -> list[dict[str, Any]]:

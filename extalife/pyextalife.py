@@ -766,6 +766,21 @@ class ExtaLifeAPI:
         """ Returns controller IP address if found, otherwise None"""
         return ExtaLifeConn.discover_controller()
 
+    @classmethod
+    def device_make_channel_id(cls, data: dict[str, Any], state: dict[str, Any] | None = None) -> str:
+        """create channel_id for specified device. If state is None then 'id' and 'channel' fields are looked up
+         in data param, otherwise 'id' is fetched from data and 'channel' from state"""
+
+        if state is None:
+            return f"{data.get("id", 81)}-{data.get("channel", "#")}"
+
+        return f"{data.get("id", 81)}-{state.get("channel", "#")}"
+
+    @classmethod
+    def device_has_sub_channels(cls, channel_id: str) -> bool:
+        """Indicates wherever passed channel_id is sub channel if not contains '#' at last position"""
+        return channel_id[-1] != "#"
+
     def __init__(self, loop: AbstractEventLoop | None = None,
                  on_connect_callback: Callable[[], Awaitable] | None = None,
                  on_disconnect_callback: Callable[[], Awaitable[int]] | None = None,
@@ -870,7 +885,7 @@ class ExtaLifeAPI:
         }
 
     @staticmethod
-    def _transform_channels(data_list: ExtaLifeDataList, dummy_channel: bool = False) -> list[dict[str, any]]:
+    def _transform_channels(data_list: ExtaLifeDataList) -> list[dict[str, Any]]:
         """
         data_js - list of TCP command data in JSON dict
         dummy_channel - dummy channel number? For Transmitters there is no channel info. Make it # per device
@@ -923,10 +938,9 @@ class ExtaLifeAPI:
         }]
         """
 
-        def_channel = "#" if dummy_channel else None
         channels = []  # list of JSON dicts
-        for data in data_list:
-            for device in data["devices"]:
+        for data_item in data_list:
+            for device in data_item["devices"]:
                 dev = device.copy()
 
                 if dev.get("exta_free_device") is True:
@@ -938,7 +952,7 @@ class ExtaLifeAPI:
                     # ch_no = state.get("channel", def_channel) if def_channel else state["channel"]
                     channel = {
                         # API channel, not TCP channel
-                        "id": str(device["id"]) + "-" + str(state.get("channel", def_channel)),
+                        "id": ExtaLifeAPI.device_make_channel_id(device, state),
                         "data": {**state, **dev}
                     }
                     channels.append(channel)
@@ -1187,17 +1201,16 @@ class ExtaLifeAPI:
 
     # async def async_get_channels(self, include=(CHN_TYP_RECEIVERS, CHN_TYP_SENSORS, CHN_TYP_TRANSMITTERS,
     #                                             CHN_TYP_EXTA_FREE_RECEIVERS)) -> ExtaLifeDataList:
-    async def async_get_channels(self, include: ExtaLifeDeviceFilter = ExtaLifeDeviceFilter.ALL):
+    async def async_get_channels(self, include: ExtaLifeDeviceFilter = ExtaLifeDeviceFilter.ALL) -> list[dict[str, Any]]:
         """
         Get list of dicts of Exta Life channels consisting of native Exta Life TCP JSON
         data, but with transformed data model. Each channel will have native channel info
         AND device info. 2 channels of the same device will have the same device attributes
         """
 
-        channels = []
+        channels: ExtaLifeDataList = []
 
         async def _async_get_channels(command: ExtaLifeCmd,
-                                      dummy_channel: bool = False,
                                       more_data: ExtaLifeDataList = None) -> None:
 
             if self.is_connected:
@@ -1205,7 +1218,7 @@ class ExtaLifeAPI:
                 if response:
                     if isinstance(more_data, list):
                         response.data.extend(more_data)
-                    channels.extend(self._transform_channels(response.data, dummy_channel))
+                    channels.extend(self._transform_channels(response.data))
 
         if ExtaLifeDeviceFilter.RECEIVERS in include:
             await _async_get_channels(ExtaLifeCmd.FETCH_RECEIVERS, more_data=FAKE_RECEIVERS)
@@ -1214,7 +1227,7 @@ class ExtaLifeAPI:
             await _async_get_channels(ExtaLifeCmd.FETCH_SENSORS, more_data=FAKE_SENSORS)
 
         if ExtaLifeDeviceFilter.TRANSMITTERS in include:
-            await _async_get_channels(ExtaLifeCmd.FETCH_TRANSMITTERS, True, more_data=FAKE_TRANSMITTERS)
+            await _async_get_channels(ExtaLifeCmd.FETCH_TRANSMITTERS, more_data=FAKE_TRANSMITTERS)
 
         if ExtaLifeDeviceFilter.EF_RECEIVER in include:
             await _async_get_channels(ExtaLifeCmd.FETCH_EXTA_FREE)

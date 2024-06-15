@@ -98,7 +98,7 @@ class Core:
         self._platforms: dict[str, list[dict[str, Any]]] = {}
         self._platform_loader: dict[str, Callable[[], Awaitable]] = {}
         self._platforms_cust: dict[str, list[dict[str, Any]]] = {}
-        self._channel_manager: ChannelDataManager = ChannelDataManager(self.hass, self.config_entry)
+        self._channel_manager: ChannelDataManager = ChannelDataManager(self, self.hass, self.config_entry)
         self._queue = asyncio.Queue()
         self._queue_task = Core.get_hass().loop.create_task(self._queue_worker())
         self._signals = {}
@@ -289,11 +289,12 @@ class Core:
         timeout = 5, 5
 
         def http_fetch_ip() -> str:
+            # noinspection PyBroadException
             try:
                 request = requests.get(url, headers=headers, timeout=timeout)
                 return request.content.decode()
 
-            except Exception as error:
+            except Exception:
                 pass
             return "0.0.0.0"
 
