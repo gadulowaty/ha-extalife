@@ -30,7 +30,7 @@ async def async_get_triggers(hass: HomeAssistant, device_id: str) -> List[dict] 
     from .helpers.core import Core
     triggers = []
 
-    _LOGGER.debug("async_get_triggers() device_id: %s", device_id)
+    _LOGGER.debug(f"async_get_triggers() device_id: {device_id}")
 
     device_registry = hass.helpers.device_registry.async_get()
     device = device_registry.async_get(device_id)
@@ -69,13 +69,13 @@ async def async_attach_trigger(
     """Attach a trigger to an automation"""
     from .helpers.core import Core
 
-    _LOGGER.debug("async_attach_trigger() config: %s, action: %s, automation_info: %s", config, action, automation_info)
+    _LOGGER.debug(f"async_attach_trigger() config: {config}, action: {action}, automation_info: {automation_info}")
 
     device_registry = hass.helpers.device_registry.async_get()
     device = device_registry.async_get(config[CONF_DEVICE_ID])
     if device is None:
-        _LOGGER.warning("async_attach_trigger() device_id: %s doesn't exist in Device Registry anymore",
-                        config[CONF_DEVICE_ID])
+        _LOGGER.warning(f"async_attach_trigger() device_id: {config[CONF_DEVICE_ID]} "
+                        f"doesn't exist in Device Registry anymore")
         return
 
     core = None
@@ -85,7 +85,7 @@ async def async_attach_trigger(
             break
 
     int_device = await core.device_manager.async_get_by_registry_id(device.id)
-    _LOGGER.debug('int_device: %s', int_device)
+    _LOGGER.debug(f"int_device: {int_device}")
     if int_device is None:
         return
 
@@ -106,10 +106,8 @@ async def async_attach_trigger(
         event.CONF_EVENT_DATA: {CONF_EXTALIFE_EVENT_UNIQUE_ID: int_device.event.unique_id, **dev_trigger},
     }
 
-    _LOGGER.debug("async_attach_trigger() event_config: %s", event_config)
+    _LOGGER.debug(f"async_attach_trigger() event_config: {event_config}")
 
     event_config = event.TRIGGER_SCHEMA(event_config)
 
-    return await event.async_attach_trigger(
-        hass, event_config, action, automation_info, platform_type="device"
-    )
+    return await event.async_attach_trigger(hass, event_config, action, automation_info, platform_type="device")

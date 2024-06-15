@@ -2,12 +2,14 @@ import asyncio
 import logging
 import importlib
 import datetime
+import requests
+
 from typing import (
     Any,
     Awaitable,
     Callable,
 )
-from homeassistant.helpers.entity import Entity
+
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -276,6 +278,27 @@ class Core:
         if event:
             self._hass.bus.async_fire(event, event_data=notification[0])
 
+    async def get_external_ip(self) -> str:
+        """returns HA external ip"""
+
+        url: str = "https://ipecho.net/plain"
+        headers: dict[str, str] = {
+            "Content-Type": "text/plain",
+            "Accept": "text/plain",
+        }
+        timeout = 5, 5
+
+        def http_fetch_ip() -> str:
+            try:
+                request = requests.get(url, headers=headers, timeout=timeout)
+                return request.content.decode()
+
+            except Exception as error:
+                pass
+            return "0.0.0.0"
+
+        return await self.hass.async_add_executor_job(http_fetch_ip, **{})
+
     @property
     def api(self) -> ExtaLifeAPI:
         return self._api
@@ -357,7 +380,7 @@ class Core:
 
         if async_setup_entry is not None:
             await async_setup_entry(self.hass, self.config_entry)
-            _LOGGER.debug("Custom platform '%s' has been configured")
+            _LOGGER.debug(f"Custom platform '{platform}' has been configured")
 
     async def async_unload_custom_platforms(self) -> None:
         """Unload other, custom (pseudo)platforms"""
@@ -412,27 +435,17 @@ class Core:
 
         self._signals[signal_ext].append(target)
 
-        _LOGGER.debug(
-            "async_signal_register(), signal: %s, signal_ext: %s, target: %s",
-            signal,
-            signal_ext,
-            target,
-        )
+        _LOGGER.debug(f"async_signal_register(), signal: {signal}, signal_ext: {signal_ext}, target: {target}")
 
         def async_remove_signal() -> None:
             """Remove signal listener."""
-            _LOGGER.debug(
-                "async_remove_signal(), signal: %s, signal_ext: %s, target: %s",
-                signal,
-                signal_ext,
-                target,
-            )
+            _LOGGER.debug(f"async_remove_signal(), signal: {signal}, signal_ext: {signal_ext}, target: {target}")
             try:
                 self._signals[signal_ext].remove(target)
             except (KeyError, ValueError):
                 # KeyError is key target listener did not exist
                 # ValueError if listener did not exist within signal
-                _LOGGER.warning("Unable to remove unknown dispatcher %s", target)
+                _LOGGER.warning(f"Unable to remove unknown dispatcher {target}")
 
         return async_remove_signal
 
@@ -444,16 +457,11 @@ class Core:
         signal_int = str(self._config_entry.entry_id) + signal
         target_list = self._signals.get(signal_int, [])
 
-        _LOGGER.debug(
-            "async_signal_send(), signal: %s, signal_int: %s, target_list: %s, *args: %s",
-            signal,
-            signal_int,
-            target_list,
-            args,
-        )
+        _LOGGER.debug(f"async_signal_send(), signal: {signal}, signal_int: {signal_int}, "
+                      f"target_list: {target_list}, *args: {args}")
 
         for target in target_list:
-            _LOGGER.debug("async_signal_send(), target: %s", target)
+            _LOGGER.debug(f"async_signal_send(), target: {target}")
             coroutine = target(*args)
             self._hass.async_create_task(coroutine)
 
@@ -466,7 +474,7 @@ class Core:
         target_list = self._signals.get(signal_int, [])
 
         for target in target_list:
-            _LOGGER.debug("queue.put %s", target)
+            _LOGGER.debug(f"queue.put {target}")
             self._queue.put_nowait({"signal": signal_int, "data": args})
 
     async def _queue_worker(self) -> None:
@@ -477,12 +485,12 @@ class Core:
             if msg is None:
                 break
 
-            _LOGGER.debug("queue.get(): %s", msg)
+            _LOGGER.debug(f"queue.get(): {msg}")
             signal = msg.get("signal")
             data = msg.get("data")
 
             for callback in self._signals.get(signal):
-                _LOGGER.debug("_queue_worker callback: %s(%s)", callback, data)
+                _LOGGER.debug(f"_queue_worker callback: {callback}({data})")
                 callback(data)
 
         _LOGGER.debug("_queue_worker done")

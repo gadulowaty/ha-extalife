@@ -207,7 +207,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
             self._supported_features |= LightEntityFeature.EFFECT
             self._effect_list = EFFECT_LIST_SLR
 
-        _LOGGER.debug("Light type: %s", repr(self.device_type))
+        _LOGGER.debug(f"Light type: {self.device_type.name}")
 
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_LIGHT_SENSOR, channel)
 
@@ -229,14 +229,9 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
         mode_val = self.channel_data.get("mode_val")
         mode_val_int = mode_val_to_int(mode_val)
         effect = kwargs.get(ATTR_EFFECT)
-        _LOGGER.debug("kwargs: %s", kwargs)
-        _LOGGER.debug("'mode_val' value: %s", mode_val)
-        _LOGGER.debug(
-            "turn_on for entity: %s(%s). mode_val_int: %s",
-            self.entity_id,
-            self.channel_id,
-            mode_val_int,
-        )
+        _LOGGER.debug(f"kwargs: {kwargs}")
+        _LOGGER.debug(f"turn_on for entity: {self.entity_id}({self.channel_id}). "
+                      f"'mode_val' value: {mode_val}; mode_val_int: {mode_val_int}")
 
         r = g = b = w = 0
         if ATTR_RGBW_COLOR in kwargs:
@@ -257,7 +252,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
 
         if self._supports_white_v and self._supports_color and effect is None:
             # Exta Life colors in SLR22 are 4 bytes: RGBW
-            _LOGGER.debug("RGB value: %s. W value: %s", rgb, w)
+            _LOGGER.debug(f"RGB value: {rgb}. W value: {w}")
             rgbw = (rgb << 8) | w  # merge RGB & W
             params.update({"mode_val": rgbw})
             params.update(
@@ -339,7 +334,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
     @property
     def supported_features(self) -> LightEntityFeature:
         """Flag supported features."""
-        _LOGGER.debug("Supported flags: %s", self._supported_features)
+        _LOGGER.debug(f"Supported flags: {self._supported_features}")
         return self._supported_features
 
     @property
@@ -373,7 +368,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
 
         state = self.channel_data.get("power")
 
-        _LOGGER.debug("is_on for entity: %s, state: %s", self.entity_id, state)
+        _LOGGER.debug(f"is_on for entity: {self.entity_id}, state: {state}")
 
         if state == 1:
             return True

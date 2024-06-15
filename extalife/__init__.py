@@ -493,7 +493,7 @@ class ChannelDataManager:
         for component_name, channels in component_configs.items():
             for channel in channels:
                 serial_no = str(channel["data"]["serial"])
-                if  serial_no not in uniq_serials:
+                if serial_no not in uniq_serials:
                     channels_for_update.append(channel)
                     uniq_serials.append(serial_no)
 

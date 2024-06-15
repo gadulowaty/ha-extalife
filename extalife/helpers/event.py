@@ -61,7 +61,7 @@ class ExtaLifeTransmitterEventProcessor(ExtaLifeEventProcessor):
         return event
 
     def process_event(self, data, event_type=CONF_PROCESSOR_EVENT_UNKNOWN):
-        _LOGGER.debug("process_event data: %s", data)
+        _LOGGER.debug(f"process_event data: {data}")
         super().process_event(data, event_type)
         self.check_supported(event_type)
 
@@ -85,13 +85,13 @@ class ExtaLifeTransmitterEventProcessor(ExtaLifeEventProcessor):
         def _timeout_callback(now=None):
             # assumption: state = 0 or 1
             # assumption: variable 'button' = value at the moment of callback registration
-            _LOGGER.debug("_timeout_callback.self._event_window[button]: %s", self._event_window[button])
+            _LOGGER.debug(f"_timeout_callback.self._event_window[button]: {self._event_window[button]}")
             remove_listener()
             value = ''
             for event in self._event_window[button]:
                 value = value + str(event[EVENT_DATA]['state'])
 
-            _LOGGER.debug("_timeout_callback.value: %s", value)
+            _LOGGER.debug(f"_timeout_callback.value: {value}")
 
             event_data[TRIGGER_SUBTYPE] = TRIGGER_SUBTYPE_BUTTON_TEMPLATE.format(button)
             if value == '1':  # long press
@@ -108,7 +108,7 @@ class ExtaLifeTransmitterEventProcessor(ExtaLifeEventProcessor):
 
             if event_data.get(TRIGGER_TYPE):
                 # raise event to HA event bus
-                _LOGGER.debug("_timeout_callback.async_fire event_data: %s", event_data)
+                _LOGGER.debug(f"_timeout_callback.async_fire event_data: {event_data}")
                 hass.bus.async_fire(self._device.event.event, event_data=event_data)
 
             # reset time window for button
@@ -121,5 +121,5 @@ class ExtaLifeTransmitterEventProcessor(ExtaLifeEventProcessor):
         self._event_window.setdefault(button, []).append(self.encapsulate(data))
 
         if event_data.get(TRIGGER_TYPE):
-            _LOGGER.debug("process_event.async_fire event_data: %s", event_data)
+            _LOGGER.debug(f"process_event.async_fire event_data: {event_data}")
             hass.bus.async_fire(self._device.event.event, event_data=event_data)
