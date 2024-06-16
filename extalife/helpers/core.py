@@ -263,7 +263,7 @@ class Core:
 
         from .. import ExtaLifeController
 
-        await ExtaLifeController.register_controller(self.config_entry.entry_id)
+        await ExtaLifeController.register_controller(self.config_entry)
 
     def controller_entity_added_to_hass(self, entity: ExtaLifeControllerType) -> None:
         """Callback called by controller entity when the entity is added to HA

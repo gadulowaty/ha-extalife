@@ -57,7 +57,7 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
     """Representation of an ExtaLife binary sensors"""
 
     def __init__(self, channel, config_entry: ConfigEntry):
-        super().__init__(channel, config_entry)
+        super().__init__(config_entry, channel)
 
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_BINARY_SENSOR_SENSOR, channel)
 
@@ -68,13 +68,13 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
         # Exta Life detection sensors keep their boolean status in field value_3
         state = self.channel_data.get("value_3")
 
-        if self.device_type in DEVICE_ARR_SENS_WATER:
+        if self.device_model in DEVICE_ARR_SENS_WATER:
             value = state
 
-        elif self.device_type in DEVICE_ARR_SENS_MOTION:
+        elif self.device_model in DEVICE_ARR_SENS_MOTION:
             value = state
 
-        elif self.device_type in DEVICE_ARR_SENS_OPEN_CLOSE:
+        elif self.device_model in DEVICE_ARR_SENS_OPEN_CLOSE:
             value = not state
         else:
             value = state
@@ -87,13 +87,13 @@ class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
     @property
     def device_class(self) -> str | None:
         """Return the class of this device, from component DEVICE_CLASSES."""
-        if self.device_type in DEVICE_ARR_SENS_WATER:
+        if self.device_model in DEVICE_ARR_SENS_WATER:
             return BinarySensorDeviceClass.MOISTURE
 
-        if self.device_type in DEVICE_ARR_SENS_MOTION:
+        if self.device_model in DEVICE_ARR_SENS_MOTION:
             return BinarySensorDeviceClass.MOTION
 
-        if self.device_type in DEVICE_ARR_SENS_OPEN_CLOSE:
+        if self.device_model in DEVICE_ARR_SENS_OPEN_CLOSE:
             return BinarySensorDeviceClass.OPENING
 
         return super().device_class

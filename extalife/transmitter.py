@@ -58,8 +58,8 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
 
 class ExtaLifeTransmitter(PseudoPlatform):
-    def __init__(self, config_entry: ConfigEntry, channel_data: dict[str, Any]):
-        super().__init__(config_entry, channel_data)
+    def __init__(self, config_entry: ConfigEntry, channel: dict[str, Any]):
+        super().__init__(config_entry, channel)
 
         self._event_processor = None
 
@@ -100,9 +100,9 @@ class TransmitterManager:
         # return self._hass.data[DOMAIN][DATA_DEV_MANAGER]
         return self._core.device_manager
 
-    async def add(self, channel_data: dict):
+    async def add(self, channel: dict):
         """ Add transmitter instance to buffer """
-        transmitter = ExtaLifeTransmitter(self._config_entry, channel_data)
+        transmitter = ExtaLifeTransmitter(self._config_entry, channel)
         data = {id: transmitter.id}
         self._transmitters.update(data)
 

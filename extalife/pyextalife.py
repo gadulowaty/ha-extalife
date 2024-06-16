@@ -36,9 +36,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # controller info
 PRODUCT_MANUFACTURER = "ZAMEL"
-PRODUCT_SERIES = "Exta Life"
+PRODUCT_SERIES_EXTA_LIFE = "Exta Life"
 PRODUCT_SERIES_EXTA_FREE = "Exta Free"
-PRODUCT_CONTROLLER_MODEL = "EFC-01"
 
 ExtaLifeResponseType = "ExtaLifeResponse"
 ExtaLifeActionType = "ExtaLifeAction"
@@ -58,6 +57,7 @@ class ExtaLifeEvent(IntEnum):
 class ExtaLifeDeviceModelName(StrEnum):
 
     # Exta Life
+    EFC01 = "EFC-01"
     RNK22 = "RNK-22"
     RNK22_TEMP_SENSOR = "RNK-22 temperature sensor"
     RNK24 = "RNK-24"
@@ -161,6 +161,7 @@ class ExtaLifeDeviceModel(IntEnum):
     RCW21 = 131
     REP21 = 237
     BULIK_DRS985 = 238
+    EFC01 = 252
 
     ROP01 = 326
     ROP02 = 327
@@ -214,6 +215,7 @@ class ExtaLifeMap:
 
     # device types string mapping
     __MAP_TYPE_TO_MODEL_NAME: dict[ExtaLifeDeviceModel, ExtaLifeDeviceModelName] = {
+        ExtaLifeDeviceModel.EFC01: ExtaLifeDeviceModelName.EFC01,
         ExtaLifeDeviceModel.RNK22: ExtaLifeDeviceModelName.RNK22,
         ExtaLifeDeviceModel.RNK22_TEMP_SENSOR: ExtaLifeDeviceModelName.RNK22_TEMP_SENSOR,
         ExtaLifeDeviceModel.RNK24: ExtaLifeDeviceModelName.RNK24,

@@ -51,7 +51,7 @@ async def async_setup_entry(
 class ExtaLifeSwitch(ExtaLifeChannel, SwitchEntity):
     """Representation of an ExtaLife Switch."""
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
-        super().__init__(channel, config_entry)
+        super().__init__(config_entry, channel)
 
         self._assumed_on: bool = False
 

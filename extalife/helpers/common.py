@@ -9,7 +9,7 @@ from ..pyextalife import (
     ExtaLifeDeviceModel,
     ExtaLifeMap,
     PRODUCT_MANUFACTURER,
-    PRODUCT_SERIES,
+    PRODUCT_SERIES_EXTA_LIFE,
 )
 from .const import DOMAIN as DOMAIN, SIGNAL_NOTIF_STATE_UPDATED
 
@@ -19,15 +19,15 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PseudoPlatform:
-    def __init__(self, config_entry: ConfigEntry, channel_data: dict[str, Any]):
+    def __init__(self, config_entry: ConfigEntry, channel: dict[str, Any]):
 
         from .core import Core
 
         self._core: Core = Core.get(config_entry.entry_id)
         self._hass: HomeAssistant = self._core.get_hass()
         self._config_entry: ConfigEntry = config_entry
-        self._channel_data = channel_data.get("data")
-        self._id: str = channel_data.get("id")
+        self._channel_data = channel.get("data")
+        self._id: str = channel.get("id")
 
         self._signal_data_notif_remove_callback = None
 
@@ -54,10 +54,9 @@ class PseudoPlatform:
         serial_no: int = self._channel_data.get('serial')
         return {
             "identifiers": {(DOMAIN, serial_no)},
-            "name": f"{PRODUCT_MANUFACTURER} {PRODUCT_SERIES} {model_name}",
+            "name": f"{PRODUCT_MANUFACTURER} {PRODUCT_SERIES_EXTA_LIFE} {model_name}",
             "manufacturer": PRODUCT_MANUFACTURER,
             "model": model_name,
-            "hw_version": None,
             "serial_number": f"{serial_no:06X}",
             "via_device": (DOMAIN, self.controller.mac),
         }

@@ -45,11 +45,13 @@ async def async_setup_entry(
 
 
 class ExtaLifeUpdate(ExtaLifeChannel, UpdateEntity):
+
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
-        super().__init__(channel, config_entry)
+        super().__init__(config_entry, channel)
 
         self._attr_device_class = UpdateDeviceClass.FIRMWARE
 
         self._attr_supported_features = UpdateEntityFeature.INSTALL
         self._attr_supported_features |= UpdateEntityFeature.BACKUP
         self._attr_supported_features |= UpdateEntityFeature.RELEASE_NOTES
+

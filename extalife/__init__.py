@@ -56,9 +56,8 @@ from .pyextalife import (
     DEVICE_ARR_ALL_TRANSMITTER,
     DEVICE_ARR_ALL_IGNORE,
     PRODUCT_MANUFACTURER,
-    PRODUCT_SERIES,
-    PRODUCT_SERIES_EXTA_FREE,
-    PRODUCT_CONTROLLER_MODEL,
+    PRODUCT_SERIES_EXTA_LIFE,
+    PRODUCT_SERIES_EXTA_FREE
 )
 from .helpers.const import (
     DOMAIN,
@@ -520,21 +519,128 @@ class ChannelDataManager:
             self._hass.async_create_task(self._core.async_setup_custom_platform(platform_name))
 
 
-class ExtaLifeChannel(Entity):
+class ExtaLifeEntity(Entity):
+
+    def __init__(self, config_entry: ConfigEntry, data: dict[str, Any]):
+        """Channel data -- channel information from PyExtaLife."""
+
+        self._config_entry: ConfigEntry = config_entry
+        self._core: Core = Core.get(config_entry.entry_id)
+        self._data: dict[str, Any] = data
+        self._data_available = True
+
+    def _set_data(self, data: dict[str, Any] | None) -> None:
+        """store new data to entity"""
+
+        _LOGGER.debug(f"async_update() for entity: {self.entity_id}, data to be updated: {data}")
+        if data is None:
+            self._data_available = False
+            return
+
+        self._data_available = True
+        self._data = data
+
+    @staticmethod
+    def _mapping_to_dict(mapping: Mapping[str, Any] | None) -> dict[str, Any]:
+        return dict(mapping) if mapping is not None else {}
+
+    async def async_update(self) -> None:
+        """Call to update state."""
+
+    @staticmethod
+    def signal_get_id_for_notification(ch_id: str) -> str:
+        return f"{SIGNAL_NOTIF_STATE_UPDATED}_{ch_id}"
+
+    def get_unique_id(self) -> str:
+        """Provide unique id for HA entity registry"""
+        return f"{DOMAIN}-{self.data.get("serial")}"
+
+    def on_state_notification(self, data: dict[str, Any]) -> None:
+        """must be overridden in entity subclasses"""
+
+    @property
+    def channel_manager(self) -> ChannelDataManager:
+        """Return ChannelDataManager object"""
+        return self.core.channel_manager
+
+    @property
+    def config_entry(self) -> ConfigEntry:
+        return self._config_entry
+
+    @property
+    def controller(self) -> ExtaLifeAPI:
+        """Return PyExtaLife's controller component associated with entity."""
+        return self.core.api
+
+    @property
+    def core(self) -> Core:
+        return self._core
+
+    @property
+    def data(self) -> dict[str, Any]:
+        return self._data
+
+    @property
+    def data_available(self) -> bool:
+        return self._data_available
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return device specific attributes."""
+
+        prod_series = (PRODUCT_SERIES_EXTA_FREE if self.is_exta_free else PRODUCT_SERIES_EXTA_LIFE)
+        serial_no = self.data.get("serial", "")
+        return {
+            "identifiers": {(DOMAIN, serial_no)},
+            "name": f"{PRODUCT_MANUFACTURER} {prod_series} {self.device_model_name}",
+            "manufacturer": PRODUCT_MANUFACTURER,
+            "model": self.device_model_name,
+            "serial_number": f"{serial_no:06X}",
+            "sw_version": ""
+        }
+
+    @property
+    def device_model(self) -> ExtaLifeDeviceModel:
+        """Return device type"""
+        return ExtaLifeDeviceModel(self.data.get("type"))
+
+    @property
+    def device_model_name(self) -> ExtaLifeDeviceModelName:
+        """Return model"""
+        return ExtaLifeMap.type_to_model_name(self.device_model)
+
+    @property
+    def is_exta_free(self) -> bool:
+        return False
+
+    @property
+    def should_poll(self) -> bool:
+        """
+        Turn off HA polling in favour of update-when-needed status changes.
+        Updates will be passed to HA by calling async_schedule_update_ha_state() for each entity
+        """
+        return False
+
+    @property
+    def unique_id(self) -> str:
+        """Return a unique ID."""
+        return self.get_unique_id()
+
+
+class ExtaLifeChannel(ExtaLifeEntity):
     """Base class of a ExtaLife Channel (an equivalent of HA's Entity).
     ParentEntity - instance of Parent Entity which instantiates this entity
     add_entity_cb - HA callback for adding entity in entity registry
     """
 
-    def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
+    def __init__(self, config_entry: ConfigEntry, channel: dict[str, Any]):
         """Channel data -- channel information from PyExtaLife."""
 
-        self._attr_translation_key = DOMAIN
+        super().__init__(config_entry, channel.get("data"))
+
         self._assumed_on: bool = False
-        self.config_entry: ConfigEntry = config_entry
-        self.channel_id: str = channel.get("id")
-        self.channel_data: dict[str, Any] = channel.get("data")
-        self.data_available: bool = True
+        self._attr_translation_key = DOMAIN
+        self._channel_id: str = channel.get("id")
 
     async def async_action(self, action, **add_pars: Any) -> dict[str, Any] | None:
         """Run controller command/action. Actions are currently hardcoded in platforms"""
@@ -546,16 +652,12 @@ class ExtaLifeChannel(Entity):
     async def async_update(self) -> None:
         """Call to update state."""
 
+        await super().async_update()
+
         # read "data" section/dict by channel id
         data = self.channel_manager.get_channel_data(self.channel_id)
 
-        _LOGGER.debug(f"async_update() for entity: {self.entity_id}, data to be updated: {data}")
-        if data is None:
-            self.data_available = False
-            return
-
-        self.data_available = True
-        self.channel_data = data
+        self._set_data(data)
 
     def sync_data_update_ha(self) -> None:
         """Performs update of Channel Data Manager with Entity data and calls HA state update.
@@ -565,6 +667,35 @@ class ExtaLifeChannel(Entity):
 
         self.channel_manager.update_channel_data(self.channel_id, self.channel_data)
         self.async_schedule_update_ha_state(True)
+
+    @staticmethod
+    def _extra_state_attribute_update(src: dict[str, Any], dst: dict[str, Any], key: str):
+        if src.get(key) is not None:
+            dst.update({key: src.get(key)})
+
+    @staticmethod
+    def _format_state_attr(attr: dict[str, Any]) -> dict[str, Any]:
+        """Format state attributes based on name and other criteria.
+        Can be overridden in dedicated subclasses to refine formatting"""
+        from re import search
+
+        for k, v in attr.items():
+            val = v
+            if search("voltage", k):
+                v = v / 100
+            elif search("current", k):
+                v = v / 1000
+            elif search("energy_consumption", k):
+                v = v / 100000
+            elif search("frequency", k):
+                v = v / 100
+            elif search("phase_shift", k):
+                v = v / 10
+            elif search("phase_energy", k):
+                v = v / 100000
+            if val != v:
+                attr.update({k: v})
+        return attr
 
     def _get_virtual_sensors(self) -> list[dict[str, Any]]:
         """By default, check all entity attributes and return virtual sensor config"""
@@ -647,12 +778,11 @@ class ExtaLifeChannel(Entity):
 
         self.on_state_notification(data)
 
-    def on_state_notification(self, data: dict[str, Any]) -> None:
-        """must be overridden in entity subclasses"""
-
     def get_unique_id(self) -> str:
         """Provide unique id for HA entity registry"""
-        return f"extalife-{str(self.channel_data.get('serial'))}-{self.channel_id}"
+
+        super_id = super().get_unique_id()
+        return f"{super_id}-{self.channel_id}"
 
     @property
     def assumed_state(self) -> bool:
@@ -675,41 +805,20 @@ class ExtaLifeChannel(Entity):
         return self.data_available is True and is_timeout is False
 
     @property
-    def controller(self) -> ExtaLifeAPI:
-        """Return PyExtaLife's controller component associated with entity."""
-        return self.core.api
+    def channel_data(self) -> dict[str, Any]:
+        return self.data
 
     @property
-    def core(self) -> Core:
-        return Core.get(self.config_entry.entry_id)
+    def channel_id(self) -> str:
+        return self._channel_id
 
     @property
     def device_info(self) -> DeviceInfo | None:
-        """Return device specific attributes."""
-
-        prod_series = (
-            PRODUCT_SERIES if not self.is_exta_free else PRODUCT_SERIES_EXTA_FREE
-        )
-        serial_no = self.channel_data.get("serial")
-        return {
-            "identifiers": {(DOMAIN, serial_no)},
-            "name": f"{PRODUCT_MANUFACTURER} {prod_series} {self.model}",
-            "manufacturer": PRODUCT_MANUFACTURER,
-            "model": self.model,
-            "via_device": (DOMAIN, self.controller.mac),
-            "serial_number": f"{serial_no:06X}",
-            "sw_version": None
-        }
-
-    @property
-    def device_type(self) -> ExtaLifeDeviceModel:
-        """Return device type"""
-        return ExtaLifeDeviceModel(self.channel_data.get("type"))
-
-    @property
-    def channel_manager(self) -> ChannelDataManager:
-        """Return ChannelDataManager object"""
-        return self.core.channel_manager
+        """Register device in Device Registry"""
+        device_info = super().device_info
+        device_info.setdefault("via_device", (DOMAIN, self.controller.mac))
+        device_info.update({"sw_version": "0.0.0"})
+        return device_info
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
@@ -732,27 +841,9 @@ class ExtaLifeChannel(Entity):
         return True
 
     @property
-    def model(self) -> ExtaLifeDeviceModelName:
-        """Return model"""
-        return ExtaLifeMap.type_to_model_name(self.device_type)
-
-    @property
     def name(self) -> str | None:
         """Return name of the entity"""
         return self.channel_data["alias"]
-
-    @property
-    def should_poll(self) -> bool:
-        """
-        Turn off HA polling in favour of update-when-needed status changes.
-        Updates will be passed to HA by calling async_schedule_update_ha_state() for each entity
-        """
-        return False
-
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID."""
-        return self.get_unique_id()
 
     @property
     def virtual_sensors(self) -> list[dict[str, Any]]:
@@ -760,112 +851,68 @@ class ExtaLifeChannel(Entity):
         Platforms should implement this property and return additional sensors if needed"""
         return []
 
-    @staticmethod
-    def signal_get_id_for_notification(ch_id: str) -> str:
-        return f"{SIGNAL_NOTIF_STATE_UPDATED}_{ch_id}"
 
-    @staticmethod
-    def _format_state_attr(attr: dict[str, Any]) -> dict[str, Any]:
-        """Format state attributes based on name and other criteria.
-        Can be overridden in dedicated subclasses to refine formatting"""
-        from re import search
-
-        for k, v in attr.items():
-            val = v
-            if search("voltage", k):
-                v = v / 100
-            elif search("current", k):
-                v = v / 1000
-            elif search("energy_consumption", k):
-                v = v / 100000
-            elif search("frequency", k):
-                v = v / 100
-            elif search("phase_shift", k):
-                v = v / 10
-            elif search("phase_energy", k):
-                v = v / 100000
-            if val != v:
-                attr.update({k: v})
-        return attr
-
-    @staticmethod
-    def _mapping_to_dict(mapping: Mapping[str, Any] | None) -> dict[str, Any]:
-        return dict(mapping) if mapping is not None else {}
-
-    @staticmethod
-    def _extra_state_attribute_update(src: dict[str, Any], dst: dict[str, Any], key: str):
-        if src.get(key) is not None:
-            dst.update({key: src.get(key)})
-
-
-class ExtaLifeControllerBase(Entity):
+class ExtaLifeControllerBase(ExtaLifeEntity):
     """Base class of a ExtaLife Channel (an equivalent of HA's Entity)."""
 
-    @staticmethod
-    def _mapping_to_dict(mapping: Mapping[str, Any] | None) -> dict[str, any]:
-        return dict(mapping) if mapping is not None else {}
-
-    def __init__(self, entry_id: str):
-        self._entry_id: str = entry_id
-        self._core: Core = Core.get(entry_id)
+    def __init__(self, config_entry: ConfigEntry, data: dict[str, Any]):
+        super().__init__(config_entry, data)
         self._attr_translation_key = "controller"
 
     async def async_added_to_hass(self) -> None:
         """When entity added to HA"""
-        pass
+        await super().async_added_to_hass()
 
     async def async_update(self) -> None:
         """Entity update callback"""
         # not necessary for the controller entity; will be updated on demand, externally
 
-    @property
-    def api(self) -> ExtaLifeAPI:
-        """Return PyExtaLife's controller API instance."""
-        return self.core.api
-
-    @property
-    def config_entry(self) -> ConfigEntry:
-        return self.core.config_entry
-
-    @property
-    def core(self) -> Core:
-        return self._core
+    def get_unique_id(self) -> str:
+        # super_id = super().get_unique_id()
+        # return f"{super_id}-{self.controller.mac}"
+        return super().get_unique_id()
 
     @property
     def device_info(self) -> DeviceInfo | None:
         """Register controller in Device Registry"""
-        return {
-            "connections": {(dr.CONNECTION_NETWORK_MAC, self.mac)},
-            "identifiers": {(DOMAIN, self.mac)},
-            "manufacturer": PRODUCT_MANUFACTURER,
-            "name": f"{PRODUCT_MANUFACTURER} {PRODUCT_SERIES} {PRODUCT_CONTROLLER_MODEL}",
-            "model": PRODUCT_CONTROLLER_MODEL,
-            "sw_version": self.api.version_installed
-        }
+
+        device_info = super().device_info
+        device_info.setdefault("connections", {(dr.CONNECTION_NETWORK_MAC, self.mac)})
+        device_info.update({"sw_version": self.controller.version_installed})
+
+        return device_info
 
     @property
     def mac(self) -> str | None:
         """controller's MAC address"""
-        return self.api.mac
-
-    @property
-    def should_poll(self) -> bool:
-        """Turn off HA status polling"""
-        return False
+        return self.controller.mac
 
 
 class ExtaLifeController(ExtaLifeControllerBase):
     """Base class of a ExtaLife Channel (an equivalent of HA's Entity)."""
 
-    def __init__(self, entry_id: str):
-        super().__init__(entry_id)
+    def __init__(self, config_entry: ConfigEntry):
+        data: dict[str, Any] = {"type": int(ExtaLifeDeviceModel.EFC01), "serial": 16515552}
+        super().__init__(config_entry, data)
+
+    async def async_added_to_hass(self) -> None:
+        """When entity added to HA"""
+        await super().async_added_to_hass()
+
+        # let the Core know about the controller entity
+        self._core.controller_entity_added_to_hass(self)
+
+    def get_unique_id(self) -> str:
+        super_id = super().get_unique_id()
+        return f"{super_id}-conn"
+        # return self.mac
 
     @staticmethod
-    async def register_controller(entry_id: str) -> None:
+    async def register_controller(config_entry: ConfigEntry) -> None:
         """Create Controller entity and create device for it in Dev. Registry
         entry_id - Config Entry entry_id"""
 
-        core: Core = Core.get(entry_id)
+        core: Core = Core.get(config_entry.entry_id)
 
         platform = entity_platform.EntityPlatform(
             hass=core.get_hass(),
@@ -878,46 +925,23 @@ class ExtaLifeController(ExtaLifeControllerBase):
         )
         platform.config_entry = core.config_entry
 
-        exta_life_controller = ExtaLifeController(core.config_entry.entry_id)
-        await platform.async_add_entities([exta_life_controller])
+        async def async_load_entities() -> None:
+
+            exta_life_controller = ExtaLifeController(config_entry)
+            await platform.async_add_entities([exta_life_controller])
+            return
+
+        await core.platform_register(DOMAIN, async_load_entities)
 
     async def unregister_controller(self) -> None:
         if self.platform:
             await self.platform.async_remove_entity(self.entity_id)
 
-    async def async_added_to_hass(self) -> None:
-        """When entity added to HA"""
-        await super().async_added_to_hass()
-
-        # let the Core know about the controller entity
-        self._core.controller_entity_added_to_hass(self)
-
-    @property
-    def unique_id(self) -> str | None:
-        """Return a unique ID."""
-        return self.mac
-
-    # this was moved to file icons.json
-    # @property
-    # def icon(self) -> str | None:
-    #     """Return the icon to use in the frontend, if any."""
-    #     return "mdi:cube-outline"
-
-    @property
-    def name(self) -> str | None:
-        """Return name of the entity"""
-        return self.api.name
-
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
         # for lost api connection this should return False, so entity status changes to 'unavailable'
-        return self.api is not None
-
-    @property
-    def state(self) -> str:
-        """Return the controller state. it will be either 'ready' or 'unavailable'"""
-        return "connected" if self.api.is_connected else "disconnected"
+        return self.controller is not None
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
@@ -926,16 +950,26 @@ class ExtaLifeController(ExtaLifeControllerBase):
         es_attr = self._mapping_to_dict(super().extra_state_attributes)
         es_attr.update(
                 {
-                     "name": self.api.name,
+                     "name": self.controller.name,
                      "type": "gateway",
-                     "mac_address": self.api.mac,
-                     "hostname": ExtaLifeConnParams.get_addr(self.api.host, self.api.port),
-                     "username": self.api.username,
-                     "ipv4_address": self.api.network["ip_address"],
-                     "ipv4_netmask": self.api.network["netmask"],
-                     "ipv4_gateway": self.api.network["gateway"],
-                     "ipv4_dns": self.api.network["dns"],
-                     "software_version": self.api.version_installed,
+                     "mac_address": self.controller.mac,
+                     "hostname": ExtaLifeConnParams.get_addr(self.controller.host, self.controller.port),
+                     "username": self.controller.username,
+                     "ipv4_address": self.controller.network["ip_address"],
+                     "ipv4_netmask": self.controller.network["netmask"],
+                     "ipv4_gateway": self.controller.network["gateway"],
+                     "ipv4_dns": self.controller.network["dns"],
+                     "software_version": self.controller.version_installed,
                 }
             )
         return es_attr
+
+    @property
+    def name(self) -> str | None:
+        """Return name of the entity"""
+        return self.controller.name
+
+    @property
+    def state(self) -> str:
+        """Return the controller state. it will be either 'ready' or 'unavailable'"""
+        return "connected" if self.controller.is_connected else "disconnected"

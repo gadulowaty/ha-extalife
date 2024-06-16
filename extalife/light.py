@@ -180,14 +180,14 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
     """Representation of an ExtaLife light controlling device."""
 
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
-        super().__init__(channel, config_entry)
+        super().__init__(config_entry, channel)
 
         self._supported_features: LightEntityFeature = LightEntityFeature(0)
         self._effect_list = None
 
-        self._supports_color = self.device_type in SUPPORT_COLOR
-        self._supports_white_v = self.device_type in SUPPORT_WHITE
-        self._supports_brightness = self.device_type in SUPPORT_BRIGHTNESS
+        self._supports_color = self.device_model in SUPPORT_COLOR
+        self._supports_white_v = self.device_model in SUPPORT_WHITE
+        self._supports_brightness = self.device_model in SUPPORT_BRIGHTNESS
 
         # set light capabilities (properties)
         if self._supports_color and self._supports_white_v:
@@ -203,11 +203,11 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
             self._attr_supported_color_modes = {ColorMode.ONOFF}
             self._attr_color_mode = ColorMode.ONOFF
 
-        if self.device_type in SUPPORT_EFFECT:
+        if self.device_model in SUPPORT_EFFECT:
             self._supported_features |= LightEntityFeature.EFFECT
             self._effect_list = EFFECT_LIST_SLR
 
-        _LOGGER.debug(f"Light type: {self.device_type.name}")
+        _LOGGER.debug(f"Light type: {self.device_model.name}")
 
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_LIGHT_SENSOR, channel)
 
@@ -328,7 +328,7 @@ class ExtaLifeLight(ExtaLifeChannel, LightEntity):
         """Return the brightness of this light between 0..255."""
         data = self.channel_data
         # brightness is only supported for native Exta Life light-controlling devices
-        if self.device_type in DEVICE_ARR_ALL_LIGHT:
+        if self.device_model in DEVICE_ARR_ALL_LIGHT:
             return scale_to_255(data.get("value"))
 
     @property

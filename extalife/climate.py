@@ -96,7 +96,7 @@ class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):
     """Representation of Exta Life Thermostat."""
 
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
-        super().__init__(channel, config_entry)
+        super().__init__(config_entry, channel)
 
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_CLIMATE_SENSOR, channel)
 

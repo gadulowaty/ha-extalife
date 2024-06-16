@@ -66,7 +66,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
     """Representation of ExtaLife Cover"""
 
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
-        super().__init__(channel, config_entry)
+        super().__init__(config_entry, channel)
 
         self.push_virtual_sensor_channels(DOMAIN_VIRTUAL_COVER_SENSOR, channel)
 
@@ -78,7 +78,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
     def device_class(self) -> CoverDeviceClass:
         """Return the class of this device, from component DEVICE_CLASSES."""
         chn_type = self.channel_data.get("channel_type")
-        if self.device_type in DEVICE_ARR_COVER:
+        if self.device_model in DEVICE_ARR_COVER:
             return CoverDeviceClass.SHUTTER
         elif chn_type == GATE_CHN_TYPE_WICKET:
             return CoverDeviceClass.DOOR

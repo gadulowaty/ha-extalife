@@ -313,12 +313,12 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
 
     def __init__(self, channel: dict[str, Any],
                  config_entry: ConfigEntry, device_class: SensorDeviceClass | ExtaSensorDeviceClass):
-        super().__init__(channel, config_entry)
+        super().__init__(config_entry, channel)
 
         self._config: SensorEntityConfig = SensorEntityConfig(SENSOR_TYPES[device_class])
 
         if isinstance(self._config.value_path, dict):
-            self._config.value_path = self._config.value_path.get(self.device_type, "value_1")
+            self._config.value_path = self._config.value_path.get(self.device_model, "value_1")
 
     @property
     def device_class(self) -> SensorDeviceClass:
@@ -348,7 +348,7 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
         try:
             value = self.get_value_from_attr_path(self._config.value_path)
         except Exception as err:
-            _LOGGER.error(f"failed to read sensor native value, device_type={self.device_type.name}, {err}")
+            _LOGGER.error(f"failed to read sensor native value, device_type={self.device_model.name}, {err}")
             value = 0
 
         if value:
