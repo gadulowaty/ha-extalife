@@ -16,10 +16,10 @@ from homeassistant.helpers.entity import (
 )
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import (
+from .helpers.core import Core
+from .helpers.entities import (
     ExtaLifeDevice
 )
-from .helpers.core import Core
 
 _LOGGER = logging.getLogger(__name__)
 

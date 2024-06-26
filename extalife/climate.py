@@ -18,9 +18,9 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import ExtaLifeChannelNamed
 from .helpers.const import DOMAIN_VIRTUAL_CLIMATE_SENSOR
 from .helpers.core import Core
+from .helpers.entities import ExtaLifeChannelNamed
 from .pyextalife import (
     ExtaLifeAction,
 )

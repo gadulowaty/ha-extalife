@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from ..transmitter import TransmitterManager
     from .. import (
         ChannelDataManager,
+    )
+    from .entities import (
         ExtaLifeController
     )
 

@@ -15,12 +15,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import ExtaLifeChannelNamed
 from .helpers.const import (
     OPTIONS_COVER_INVERTED_CONTROL,
     DOMAIN_VIRTUAL_COVER_SENSOR
 )
 from .helpers.core import Core
+from .helpers.entities import ExtaLifeChannelNamed
 from .pyextalife import (
     ExtaLifeAction,
     ExtaLifeDeviceModel,

@@ -22,14 +22,14 @@ from homeassistant.helpers.device_registry import (
 )
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import (
-    ExtaLifeDevice
-)
 from .helpers.const import DOMAIN
 from .helpers.const import (
     URL_CHANGELOG_HTML,
 )
 from .helpers.core import Core
+from .helpers.entities import (
+    ExtaLifeDevice
+)
 from .pyextalife import (
     ExtaLifeCmd,
     ExtaLifeDeviceModel,

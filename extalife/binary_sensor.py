@@ -14,9 +14,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import ExtaLifeChannelNamed
 from .helpers.const import DOMAIN_VIRTUAL_BINARY_SENSOR_SENSOR
 from .helpers.core import Core
+from .helpers.entities import ExtaLifeChannelNamed
 from .pyextalife import (  # pylint: disable=syntax-error
     DEVICE_ARR_SENS_WATER,
     DEVICE_ARR_SENS_MOTION,

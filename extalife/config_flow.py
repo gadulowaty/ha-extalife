@@ -426,10 +426,12 @@ class ExtaLifeOptionsFlowHandler(OptionsFlowWithConfigEntry):
             data_schema=vol.Schema(
                 {
                     vol.Required(OPTIONS_GENERAL_POLL_INTERVAL,
-                                 default=self.options[OPTIONS_GENERAL].get(OPTIONS_GENERAL_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+                                 default=self.options[OPTIONS_GENERAL].get(
+                                     OPTIONS_GENERAL_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
                                  ): status_poll_selector,
                     vol.Required(OPTIONS_GENERAL_VER_INTERVAL,
-                                 default=self.options[OPTIONS_GENERAL].get(OPTIONS_GENERAL_VER_INTERVAL, DEFAULT_VER_INTERVAL)
+                                 default=self.options[OPTIONS_GENERAL].get(
+                                     OPTIONS_GENERAL_VER_INTERVAL, DEFAULT_VER_INTERVAL)
                                  ): version_poll_selector,
                     vol.Required(OPTIONS_GENERAL_DISABLE_NOT_RESPONDING,
                                  default=self.options[OPTIONS_GENERAL].get(OPTIONS_GENERAL_DISABLE_NOT_RESPONDING)

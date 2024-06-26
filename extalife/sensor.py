@@ -41,7 +41,6 @@ from homeassistant.helpers.typing import (
     StateType,
 )
 
-from . import ExtaLifeChannelNamed
 from .helpers.const import (
     DOMAIN_VIRTUAL_SENSORS,
     DOMAIN_VIRTUAL_SENSOR,
@@ -51,6 +50,7 @@ from .helpers.const import (
     VIRTUAL_SENSOR_ALLOWED_CHANNELS,
 )
 from .helpers.core import Core
+from .helpers.entities import ExtaLifeChannelNamed
 from .pyextalife import (  # pylint: disable=syntax-error
     ExtaLifeDeviceModel,
     DEVICE_ARR_SENS_ENERGY_METER,

@@ -25,9 +25,9 @@ from homeassistant.helpers.typing import (
     DiscoveryInfoType,
 )
 
-from . import ExtaLifeChannelNamed
 from .helpers.const import DOMAIN_VIRTUAL_LIGHT_SENSOR
 from .helpers.core import Core
+from .helpers.entities import ExtaLifeChannelNamed
 from .pyextalife import (  # pylint: disable=syntax-error
     ExtaLifeAction,
     ExtaLifeDeviceModel,

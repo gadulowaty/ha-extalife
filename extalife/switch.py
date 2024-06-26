@@ -12,9 +12,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import ExtaLifeChannelNamed
 from .helpers.const import DOMAIN_VIRTUAL_SWITCH_SENSOR
 from .helpers.core import Core
+from .helpers.entities import ExtaLifeChannelNamed
 from .pyextalife import (
     ExtaLifeAction,
 )

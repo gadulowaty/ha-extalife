@@ -282,7 +282,7 @@ class Core:
     async def register_controller(self) -> None:
         """Register controller in Device Registry and create its entity"""
 
-        from .. import ExtaLifeController
+        from .entities import ExtaLifeController
 
         await ExtaLifeController.register_controller(self.config_entry, self.api.serial_no)
 
