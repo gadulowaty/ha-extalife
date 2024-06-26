@@ -214,7 +214,7 @@ async def async_remove_config_entry_device(
     hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry
 ) -> bool:
     """Remove a nexia config entry from a device."""
-    return False
+    return True
 
 
 async def async_initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:

@@ -133,8 +133,13 @@ class ExtaLifeEntity(Entity):
 
         prod_series = (PRODUCT_SERIES_EXTA_FREE if self.is_exta_free else PRODUCT_SERIES_EXTA_LIFE)
         serial_no = self.data.get("serial", 0)
+        if self.device_model == ExtaLifeDeviceModel.EFC01:
+            identify = self.controller.mac
+        else:
+            identify = str(serial_no)
+
         return DeviceInfo(
-            identifiers={(DOMAIN, str(serial_no))},
+            identifiers={(DOMAIN, identify)},
             name=f"{PRODUCT_MANUFACTURER} {prod_series} {self.device_model_name}",
             manufacturer=PRODUCT_MANUFACTURER,
             model=self.device_model_name,
@@ -207,6 +212,14 @@ class ExtaLifeDevice(ExtaLifeEntity):
 
         self.channel_manager.device_update_data(self.device_id, self.data)
         self.async_schedule_update_ha_state(True)
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Register device in Device Registry"""
+        device_info = super().device_info
+        if self.device_model != ExtaLifeDeviceModel.EFC01:
+            device_info.setdefault("via_device", (DOMAIN, self.controller.mac))
+        return device_info
 
 
 class ExtaLifeChannel(ExtaLifeEntity):
@@ -316,7 +329,6 @@ class ExtaLifeChannel(ExtaLifeEntity):
         """Register device in Device Registry"""
         device_info = super().device_info
         device_info.setdefault("via_device", (DOMAIN, self.controller.mac))
-        # device_info.update({"sw_version": "0.0.0"})
         return device_info
 
     @property
@@ -463,7 +475,6 @@ class ExtaLifeController(ExtaLifeEntity):
     def _get_unique_id(self) -> str:
         super_id = super()._get_unique_id()
         return f"{super_id}-conn"
-        # return self.mac
 
     @staticmethod
     async def register_controller(config_entry: ConfigEntry, serial_no: int) -> None:
