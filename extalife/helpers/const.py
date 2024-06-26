@@ -1,6 +1,6 @@
 """Constants for the NEW_NAME integration."""
 
-DOMAIN = "extalife"
+DOMAIN: str = "extalife"
 
 # hass.data objects
 DATA_CORE = "core"
@@ -9,14 +9,20 @@ CONF_CONTROLLER_IP = "controller_ip"
 CONF_USERNAME = "user"
 CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"  # in minutes
+CONF_VER_INTERVAL = "version_interval"  # in hours
 DEFAULT_POLL_INTERVAL = 5
+DEFAULT_VER_INTERVAL = 12
 CONF_BACKUP_PATH = "path"
 CONF_BACKUP_SCHEDULE = "schedule"
 CONF_BACKUP_RETENTION = "retention"
 
 OPTIONS_GENERAL_POLL_INTERVAL = "poll_interval"
+OPTIONS_GENERAL_VER_INTERVAL = "version_interval"
+
 OPTIONS_GENERAL_DISABLE_NOT_RESPONDING = "disable_not_responding"
 
+URL_CHANGELOG_HTML: str = "https://extalife.otoloto.me/changelog/"
+URL_CHANGELOG_JSON: str = "https://extalife.otoloto.me/changelog/?json"
 
 CONF_OPTIONS = "options"  # additional per-platform configuration
 OPTIONS_GENERAL = "general"  # general settings
@@ -28,7 +34,8 @@ OPTIONS_COVER_INVERTED_CONTROL = "inverted_control"
 
 # signals
 SIGNAL_DATA_UPDATED = f"{DOMAIN}_data_updated"
-SIGNAL_NOTIF_STATE_UPDATED = f"{DOMAIN}_notif_state_updated"
+SIGNAL_CHANNEL_NOTIF_STATE_UPDATED = f"{DOMAIN}_channel_notif_state_updated"
+SIGNAL_DEVICE_NOTIF_CONFIG_UPDATED = f"{DOMAIN}_device_notif_config_updated"
 
 
 # transmitters

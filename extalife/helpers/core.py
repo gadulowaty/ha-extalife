@@ -1,40 +1,51 @@
 import asyncio
-import logging
-import importlib
 import datetime
-import requests
-
+import importlib
+import json
+import logging
+from contextlib import suppress
+from datetime import (
+    datetime,
+    timedelta
+)
 from typing import (
     Any,
     Awaitable,
     Callable,
 )
 
-from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.core import HomeAssistant
+import requests
+from homeassistant.components.logbook import async_log_entry
+from homeassistant.components.persistent_notification import async_create as async_create_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.translation import async_get_translations
 
-from .const import DATA_CORE, DOMAIN, CONF_EXTALIFE_EVENT_SCENE
-from ..pyextalife import (
-    ExtaLifeAPI,
-    ExtaLifeCmd,
-    ExtaLifeResponse
+from .const import (
+    DATA_CORE,
+    DOMAIN,
+    CONF_EXTALIFE_EVENT_SCENE,
+    URL_CHANGELOG_JSON
 )
+from .services import ExtaLifeServices
 from .typing import (
     ChannelDataManagerType,
     CoreType,
     DeviceManagerType,
     ExtaLifeControllerType
 )
-
-from .services import ExtaLifeServices
-
+from ..pyextalife import (
+    ExtaLifeAPI,
+    ExtaLifeCmd,
+    ExtaLifeResponse
+)
 
 MAP_NOTIF_CMD_TO_EVENT = {
     ExtaLifeCmd.ACTIVATE_SCENE: CONF_EXTALIFE_EVENT_SCENE
 }
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,11 +55,11 @@ async def options_change_callback(hass: HomeAssistant, config_entry: ConfigEntry
     """Options update listener"""
 
     core = Core.get(config_entry.entry_id)
-    core.channel_manager.polling_task_configure()
+    await core.channel_manager.async_status_polling_task_setup(False)
+    await core.channel_manager.async_version_polling_task_setup(False)
 
 
 class Core:
-
     _inst: dict[str, CoreType] = dict()
     _hass: HomeAssistant = None
     _services: ExtaLifeServices = None
@@ -83,16 +94,19 @@ class Core:
         from ..transmitter import TransmitterManager
         from .. import ChannelDataManager
 
+        self._ver_check_web: bool = False
         self._inst[config_entry.entry_id] = self
-
+        self._changelog: dict[str, Any] = {"next": 0, "data": []}
         self._config_entry: ConfigEntry = config_entry
         self._device_manager: DeviceManager = DeviceManager(config_entry, self)
         self._transmitter_manager = TransmitterManager(config_entry)
         self._api = ExtaLifeAPI(
             self.hass.loop,
-            on_connect_callback=self._on_connect_callback,
-            on_disconnect_callback=self._on_disconnect_callback,
+            on_connect_callback=self._on_api_connect_callback,
+            on_disconnect_callback=self._on_api_disconnect_callback,
+            on_notification_callback=self._on_api_notification_callback
         )
+
         self._signal_callbacks: dict[str, Callable[[], None]] = {}
         self._track_time_callbacks: list[Callable] = []
         self._platforms: dict[str, list[dict[str, Any]]] = {}
@@ -112,8 +126,6 @@ class Core:
         self._storage = {}
 
         self._is_unloading = False
-
-        self._api.set_notification_callback(self._on_status_notification_callback)
 
     async def platform_load(self, platform: str) -> bool:
         """Check if platform has been loaded if so will load awaiting channels and return true otherwise false"""
@@ -153,7 +165,8 @@ class Core:
         self._is_unloading = True
 
         await Core._callbacks_cleanup(self.config_entry.entry_id)
-        await self.channel_manager.async_polling_task_execute(False, False)
+        await self.channel_manager.async_status_polling_task_setup(False, False)
+        await self.channel_manager.async_version_polling_task_setup(False, False)
 
         await self.api.async_disconnect()
 
@@ -184,7 +197,8 @@ class Core:
         await cls._callbacks_cleanup()
         for inst in cls._inst.values():
             await Core._callbacks_cleanup(inst.config_entry.entry_id)
-            await inst.channel_manager.async_polling_task_execute(False, False)
+            await inst.channel_manager.async_status_polling_task_setup(False, False)
+            await inst.channel_manager.async_version_polling_task_setup(False, False)
 
             await inst.api.async_disconnect()
 
@@ -219,22 +233,25 @@ class Core:
             self._services = ExtaLifeServices(self._hass)
             await self._services.async_register_services()
 
-    async def _on_connect_callback(self) -> None:
+    async def _on_api_connect_callback(self) -> None:
         """Execute actions on (re)connection to controller"""
 
-        await self.channel_manager.async_polling_task_execute()
+        await self.channel_manager.async_status_polling_task_setup()
+        await self.channel_manager.async_version_polling_task_setup()
 
-        # Update controller software info
+        # Update controller software info, but only on reconnect event
+        # during first fire up, entity is still empty
         if self._controller_entity is not None:
             self._controller_entity.schedule_update_ha_state()
 
-    async def _on_disconnect_callback(self) -> int:
+    async def _on_api_disconnect_callback(self) -> int:
         """Execute actions on disconnection with controller"""
 
         if self._is_unloading or self._is_stopping:
             return 0
 
-        await self.channel_manager.async_polling_task_execute(False, False)
+        await self.channel_manager.async_status_polling_task_setup(False, False)
+        await self.channel_manager.async_version_polling_task_setup(False, False)
 
         # Update controller software info
         if self._controller_entity is not None:
@@ -242,13 +259,17 @@ class Core:
 
         return 10
 
-    async def _on_status_notification_callback(self, notification: ExtaLifeResponse) -> None:
+    async def _on_api_notification_callback(self, notification: ExtaLifeResponse) -> None:
         if self._is_unloading or self._is_stopping:
             return
 
+        notification_data = notification[0]
+        notification_data.update({"command": notification.command})
         # forward only state notifications to data manager to update channels
         if notification.command == ExtaLifeCmd.CONTROL_DEVICE:
-            self.channel_manager.on_notify(notification[0])
+            self.channel_manager.channel_on_notify(notification_data)
+        elif notification.command == ExtaLifeCmd.UPDATE_RECEIVERS:
+            self.channel_manager.device_on_notify(notification_data)
 
         self._put_notification_on_event_bus(notification)
 
@@ -263,7 +284,26 @@ class Core:
 
         from .. import ExtaLifeController
 
-        await ExtaLifeController.register_controller(self.config_entry)
+        await ExtaLifeController.register_controller(self.config_entry, self.api.serial_no)
+
+    def ver_check_required(self) -> bool:
+        return self.api.ver_check_required()
+
+    @property
+    def ver_check_web(self) -> bool:
+        return self._ver_check_web
+
+    def ver_check_set(self, next_update: int, last_update: bool = False) -> bool:
+
+        if next_update < 0:
+            self._ver_check_web = False
+        elif next_update > 0:
+            self._ver_check_web = True
+        if self.api.ver_check_set(next_update, last_update) and self._controller_entity is not None:
+            self._controller_entity.schedule_update_ha_state()
+            return True
+
+        return False
 
     def controller_entity_added_to_hass(self, entity: ExtaLifeControllerType) -> None:
         """Callback called by controller entity when the entity is added to HA
@@ -408,7 +448,7 @@ class Core:
         self._storage.pop(inst_id)
 
     def async_track_time_interval(
-            self, callback: Callable[[datetime], Awaitable | None], interval: datetime.timedelta):
+            self, callback: Callable[[datetime], Awaitable | None], interval: timedelta):
         """Add a listener that fires repetitively at every timedelta interval."""
 
         remove_callback = async_track_time_interval(self.hass, callback, interval)
@@ -425,24 +465,26 @@ class Core:
 
         return _managed_remove_callback
 
+    def signal_get_global_id(self, signal: str) -> str:
+        """create global signal name uniq to entire HA"""
+
+        return f"{self._config_entry.entry_id}-{signal}"
+
     def async_signal_register(self, signal: str, target) -> Callable:
         """Connect a callable function to a signal.
 
         This method must be run in the event loop.
         """
-        signal_ext = str(self._config_entry.entry_id) + signal
-        if signal_ext not in self._signals:
-            self._signals[signal_ext] = []
+        signal_global: str = self.signal_get_global_id(signal)
+        self._signals.setdefault(signal_global, []).append(target)
 
-        self._signals[signal_ext].append(target)
-
-        _LOGGER.debug(f"async_signal_register(), signal: {signal}, signal_ext: {signal_ext}, target: {target}")
+        _LOGGER.debug(f"async_signal_register(), signal: {signal}, signal_ext: {signal_global}, target: {target}")
 
         def async_remove_signal() -> None:
             """Remove signal listener."""
-            _LOGGER.debug(f"async_remove_signal(), signal: {signal}, signal_ext: {signal_ext}, target: {target}")
+            _LOGGER.debug(f"async_remove_signal(), signal: {signal}, signal_ext: {signal_global}, target: {target}")
             try:
-                self._signals[signal_ext].remove(target)
+                self._signals[signal_global].remove(target)
             except (KeyError, ValueError):
                 # KeyError is key target listener did not exist
                 # ValueError if listener did not exist within signal
@@ -455,10 +497,10 @@ class Core:
 
         This method must be run in the event loop.
         """
-        signal_int = str(self._config_entry.entry_id) + signal
-        target_list = self._signals.get(signal_int, [])
+        signal_global: str = self.signal_get_global_id(signal)
+        target_list = self._signals.get(signal_global, [])
 
-        _LOGGER.debug(f"async_signal_send(), signal: {signal}, signal_int: {signal_int}, "
+        _LOGGER.debug(f"async_signal_send(), signal: {signal}, signal_int: {signal_global}, "
                       f"target_list: {target_list}, *args: {args}")
 
         for target in target_list:
@@ -471,12 +513,12 @@ class Core:
 
         This method must be run in the event loop.
         """
-        signal_int = str(self._config_entry.entry_id) + signal
-        target_list = self._signals.get(signal_int, [])
+        signal_global: str = self.signal_get_global_id(signal)
+        target_list = self._signals.get(signal_global, [])
 
         for target in target_list:
             _LOGGER.debug(f"queue.put {target}")
-            self._queue.put_nowait({"signal": signal_int, "data": args})
+            self._queue.put_nowait({"signal": signal_global, "data": args})
 
     async def _queue_worker(self) -> None:
         _LOGGER.debug("_queue_worker started")
@@ -495,3 +537,72 @@ class Core:
                 callback(data)
 
         _LOGGER.debug("_queue_worker done")
+
+    async def changelog_get(self) -> dict[str, Any]:
+        """returns Zamel Changelog"""
+
+        def http_fetch_changelog() -> str:
+            headers: dict[str, str] = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            timeout = 3, 3
+            request = requests.get(URL_CHANGELOG_JSON, headers=headers, timeout=timeout)
+
+            return request.content.decode()
+
+        # noinspection PyBroadException
+        try:
+            if self._changelog["next"] == 0 or datetime.now().timestamp() > self._changelog["next"]:
+                changelog = json.loads(await self.hass.async_add_executor_job(http_fetch_changelog, **{}))
+                self._changelog.update({"next": datetime.now().timestamp() + 6 * 3600, "data": changelog})
+
+        except ConnectionError as conn_err:
+            _LOGGER.warning(f"Failed to get changelog: {conn_err}")
+            self._changelog.update({"next": datetime.now().timestamp() + 60})
+
+        except Exception as err:
+            _LOGGER.warning(f"Failed to get changelog: {err}")
+            self._changelog.update({"next": datetime.now().timestamp() + 3600})
+
+        return self._changelog["data"]
+
+    async def i18n_get(
+            self,
+            category: str,
+            key: str,
+            placeholders: dict[str, str] | None = None,
+    ) -> str:
+        """Return a translated exception message.
+        Defaults to English, requires translations to already be cached.
+        """
+        localize_key = f"component.{DOMAIN}.{category}.{key}"
+
+        translations = await async_get_translations(self.hass, self.hass.config.language, category)
+        if localize_key in translations:
+            if message := translations[localize_key]:
+                message = message.rstrip(".")
+            if not placeholders:
+                return message
+            with suppress(KeyError):
+                message = message.format(**placeholders)
+            return message
+
+        # We return the translation key when was not found in the cache
+        return key
+
+    async def async_logbook_write(self, entity: Entity, message_key, placeholder: dict[str, str]) -> None:
+        name: str = f"{entity.device_entry.name} {entity.name}"
+        message: str = await self.i18n_get("logbook", message_key, placeholder)
+        async_log_entry(self.hass, name, message, DOMAIN, entity.entity_id)
+
+    async def async_i18n_get_notification_title(self, key: str, placeholder: dict[str, str]) -> str:
+        return await self.i18n_get("notifications", f"{key}.title", placeholder)
+
+    async def async_i18n_get_notification_message(self, key: str, placeholder: dict[str, str]) -> str:
+        return await self.i18n_get("notifications", f"{key}.message", placeholder)
+
+    def notification_push(self, message, title, notification_id: str = "") -> None:
+
+        notification_id = DOMAIN + ("." + notification_id) if notification_id else ""
+        async_create_notification(self.hass, message, title, notification_id)

@@ -7,12 +7,7 @@ from typing import (
     Any,
 )
 
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
-)
-from homeassistant.config_entries import ConfigEntry
+import homeassistant.util.color as color_util
 from homeassistant.components.light import (
     ColorMode,
     LightEntity,
@@ -22,13 +17,18 @@ from homeassistant.components.light import (
     ATTR_EFFECT,
     DOMAIN as DOMAIN_LIGHT,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-import homeassistant.util.color as color_util
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import (
+    ConfigType,
+    DiscoveryInfoType,
+)
 
-from . import ExtaLifeChannel
+from . import ExtaLifeChannelNamed
 from .helpers.const import DOMAIN_VIRTUAL_LIGHT_SENSOR
 from .helpers.core import Core
-from .pyextalife import (       # pylint: disable=syntax-error
+from .pyextalife import (  # pylint: disable=syntax-error
     ExtaLifeAction,
     ExtaLifeDeviceModel,
     DEVICE_ARR_ALL_LIGHT
@@ -168,7 +168,7 @@ async def async_setup_entry(
 
         _LOGGER.debug(f"Discovery ({DOMAIN_LIGHT}): {channels}")
         if channels:
-            async_add_entities([ExtaLifeLight(channel, config_entry) for channel in channels])
+            async_add_entities([ExtaLifeLightNamed(channel, config_entry) for channel in channels])
 
         core.pop_channels(DOMAIN_LIGHT)
         return None
@@ -176,7 +176,7 @@ async def async_setup_entry(
     await core.platform_register(DOMAIN_LIGHT, async_load_entities)
 
 
-class ExtaLifeLight(ExtaLifeChannel, LightEntity):
+class ExtaLifeLightNamed(ExtaLifeChannelNamed, LightEntity):
     """Representation of an ExtaLife light controlling device."""
 
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):

@@ -2,11 +2,11 @@
 import asyncio
 import logging
 import os.path
-import voluptuous as vol
 from typing import (
     Any,
 )
 
+import voluptuous as vol
 from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.core import (
     HomeAssistant,
@@ -29,10 +29,10 @@ from .const import (
 from .typing import CoreType
 
 # services
-SVC_RESTART = "restart"                # restart controller
+SVC_RESTART = "restart"  # restart controller
 SVC_TEST_BUTTON = "test_button"
-SVC_REFRESH_STATE = "refresh_state"    # execute status refresh, fetch new status from controller
-SVC_CONFIG_BACKUP = "config_backup"    # create controller configuration backup
+SVC_REFRESH_STATE = "refresh_state"  # execute status refresh, fetch new status from controller
+SVC_CONFIG_BACKUP = "config_backup"  # create controller configuration backup
 SVC_CONFIG_RESTORE = "config_restore"  # restore controller configuration from backup
 
 _LOGGER = logging.getLogger(__name__)
@@ -121,7 +121,7 @@ class ExtaLifeServices:
 
         core = self._get_core(entity_id)
         if core and core.api:
-            asyncio.run_coroutine_threadsafe(core.channel_manager.async_polling_task_execute(), self._hass.loop)
+            asyncio.run_coroutine_threadsafe(core.channel_manager.async_status_polling_task_setup(), self._hass.loop)
 
     def _get_backup_path(self, path: str | None) -> str:
         if not path:
@@ -143,8 +143,7 @@ class ExtaLifeServices:
                 retention: int = call.data.get(CONF_BACKUP_RETENTION)
 
                 asyncio.run_coroutine_threadsafe(
-                    core.api.async_config_backup(path, schedule=prefix, retention=retention),
-                    self._hass.loop
+                    core.api.async_config_backup(path, schedule=prefix, retention=retention), self._hass.loop
                 )
 
     def _handle_config_restore(self, call: ServiceCall) -> None:

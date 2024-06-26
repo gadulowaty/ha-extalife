@@ -1,13 +1,13 @@
 """Config flow to configure Exta Life component."""
 
-import voluptuous as vol
 import logging
-import homeassistant.helpers.config_validation as cv
 from typing import (
     Any,
 )
+
+import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import callback
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -15,14 +15,10 @@ from homeassistant.config_entries import (
     OptionsFlowWithConfigEntry,
     OptionsFlow,
 )
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import (
     AbortFlow,
 )
-
-from .helpers.core import (
-    Core,
-)
-
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -35,13 +31,18 @@ from .helpers.const import (
     CONF_USERNAME,
     CONF_PASSWORD,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_VER_INTERVAL,
     OPTIONS_LIGHT,
     OPTIONS_GENERAL,
     OPTIONS_COVER,
     OPTIONS_LIGHT_ICONS_LIST,
     OPTIONS_COVER_INVERTED_CONTROL,
     OPTIONS_GENERAL_POLL_INTERVAL,
+    OPTIONS_GENERAL_VER_INTERVAL,
     OPTIONS_GENERAL_DISABLE_NOT_RESPONDING
+)
+from .helpers.core import (
+    Core,
 )
 from .pyextalife import (
     ExtaLifeAPI,
@@ -361,6 +362,7 @@ def get_default_options() -> dict[str, Any]:
     options = {}
     options.setdefault(OPTIONS_GENERAL, {
         OPTIONS_GENERAL_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
+        OPTIONS_GENERAL_VER_INTERVAL: DEFAULT_VER_INTERVAL,
         OPTIONS_GENERAL_DISABLE_NOT_RESPONDING: True
     })
     options.setdefault(OPTIONS_LIGHT, {
@@ -401,10 +403,19 @@ class ExtaLifeOptionsFlowHandler(OptionsFlowWithConfigEntry):
             self.options[OPTIONS_GENERAL] = user_input
             return await self.async_step_light()
 
-        poll_selector = vol.All(
+        status_poll_selector = vol.All(
             NumberSelector(
                 NumberSelectorConfig(
                     mode=NumberSelectorMode.SLIDER, min=1, max=60, step=2, unit_of_measurement="minutes"
+                )
+            ),
+            vol.Coerce(int)
+        )
+
+        version_poll_selector = vol.All(
+            NumberSelector(
+                NumberSelectorConfig(
+                    mode=NumberSelectorMode.SLIDER, min=0, max=720, step=1, unit_of_measurement="hours"
                 )
             ),
             vol.Coerce(int)
@@ -415,8 +426,11 @@ class ExtaLifeOptionsFlowHandler(OptionsFlowWithConfigEntry):
             data_schema=vol.Schema(
                 {
                     vol.Required(OPTIONS_GENERAL_POLL_INTERVAL,
-                                 default=self.options[OPTIONS_GENERAL].get(OPTIONS_GENERAL_POLL_INTERVAL)
-                                 ): poll_selector,
+                                 default=self.options[OPTIONS_GENERAL].get(OPTIONS_GENERAL_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+                                 ): status_poll_selector,
+                    vol.Required(OPTIONS_GENERAL_VER_INTERVAL,
+                                 default=self.options[OPTIONS_GENERAL].get(OPTIONS_GENERAL_VER_INTERVAL, DEFAULT_VER_INTERVAL)
+                                 ): version_poll_selector,
                     vol.Required(OPTIONS_GENERAL_DISABLE_NOT_RESPONDING,
                                  default=self.options[OPTIONS_GENERAL].get(OPTIONS_GENERAL_DISABLE_NOT_RESPONDING)
                                  ): cv.boolean

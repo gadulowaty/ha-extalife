@@ -4,6 +4,8 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from .const import DOMAIN as DOMAIN, SIGNAL_CHANNEL_NOTIF_STATE_UPDATED
+from .device import Device
 from ..pyextalife import (
     ExtaLifeAPI,
     ExtaLifeDeviceModel,
@@ -11,9 +13,6 @@ from ..pyextalife import (
     PRODUCT_MANUFACTURER,
     PRODUCT_SERIES_EXTA_LIFE,
 )
-from .const import DOMAIN as DOMAIN, SIGNAL_NOTIF_STATE_UPDATED
-
-from .device import Device
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,7 +70,7 @@ class PseudoPlatform:
 
     @staticmethod
     def get_notif_upd_signal(ch_id) -> str:
-        return f"{SIGNAL_NOTIF_STATE_UPDATED}_{ch_id}"
+        return f"{SIGNAL_CHANNEL_NOTIF_STATE_UPDATED}_{ch_id}"
 
     async def async_added_to_hass(self) -> None:
         pass

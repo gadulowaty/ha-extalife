@@ -3,12 +3,12 @@ import logging
 from typing import (
     Any,
 )
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .helpers.common import PseudoPlatform
 from .helpers.const import DOMAIN_TRANSMITTER
-
 from .helpers.core import Core
 from .helpers.typing import DeviceManagerType
 
@@ -93,7 +93,7 @@ class TransmitterManager:
 
         self._config_entry = config_entry
 
-        self._transmitters: dict[id, str] = {}
+        self._transmitters: dict[id, ExtaLifeTransmitter] = {}
 
     @property
     def device_manager(self) -> DeviceManagerType:
@@ -103,7 +103,7 @@ class TransmitterManager:
     async def add(self, channel: dict):
         """ Add transmitter instance to buffer """
         transmitter = ExtaLifeTransmitter(self._config_entry, channel)
-        data = {id: transmitter.id}
+        data = {transmitter.id: transmitter}
         self._transmitters.update(data)
 
         await self.register_device(transmitter)
@@ -117,5 +117,5 @@ class TransmitterManager:
 
     async def unload_transmitters(self) -> None:
         """ Unload transmitters: cleanup, unregister signals etc """
-        for tr_id, transmitter in self._transmitters:
+        for tr_id, transmitter in self._transmitters.items():
             await transmitter.async_will_remove_from_hass()

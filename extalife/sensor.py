@@ -1,4 +1,5 @@
 """Support for Exta Life sensor devices"""
+import logging
 from dataclasses import dataclass
 from datetime import (
     date,
@@ -6,7 +7,6 @@ from datetime import (
 )
 from decimal import Decimal
 from enum import StrEnum
-import logging
 from typing import (
     Any,
     Mapping,
@@ -36,15 +36,12 @@ from homeassistant.const import (
     LIGHT_LUX,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
     StateType,
 )
-from . import ExtaLifeChannel
-from .helpers.core import Core
+
+from . import ExtaLifeChannelNamed
 from .helpers.const import (
     DOMAIN_VIRTUAL_SENSORS,
     DOMAIN_VIRTUAL_SENSOR,
@@ -53,7 +50,8 @@ from .helpers.const import (
     VIRTUAL_SENSOR_PATH,
     VIRTUAL_SENSOR_ALLOWED_CHANNELS,
 )
-from .pyextalife import (           # pylint: disable=syntax-error
+from .helpers.core import Core
+from .pyextalife import (  # pylint: disable=syntax-error
     ExtaLifeDeviceModel,
     DEVICE_ARR_SENS_ENERGY_METER,
     DEVICE_ARR_SENS_TEMP,
@@ -308,7 +306,7 @@ async def async_setup_entry(
     await core.platform_register(DOMAIN_SENSOR, async_load_entities)
 
 
-class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
+class ExtaLifeSensorBaseNamed(ExtaLifeChannelNamed, SensorEntity):
     """Representation of Exta Life Sensors"""
 
     def __init__(self, channel: dict[str, Any],
@@ -387,7 +385,7 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
 
     def get_value_from_attr_path(self, attr_path: str):
         """Extract value from encoded path"""
-        # Example path: 'phase[1].voltage   -> array phase, row 1, field voltage
+        # Example path: 'phase[1].voltage'   -> array phase, row 1, field voltage
         # attr.append({"dev_class": dev_class, "path": f"?phase[{c}]{k}", "unit": unit})
 
         def find_element(path: str, dictionary: dict):
@@ -413,7 +411,7 @@ class ExtaLifeSensorBase(ExtaLifeChannel, SensorEntity):
         return find_element(attr_path, self.channel_data)
 
 
-class ExtaLifeSensor(ExtaLifeSensorBase):
+class ExtaLifeSensor(ExtaLifeSensorBaseNamed):
     """Representation of Exta Life Sensors"""
 
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
@@ -455,7 +453,7 @@ class ExtaLifeSensor(ExtaLifeSensorBase):
         return attr
 
 
-class ExtaLifeVirtualSensor(ExtaLifeSensorBase):
+class ExtaLifeVirtualSensor(ExtaLifeSensorBaseNamed):
     """Representation of Exta Life Sensors"""
 
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry, virtual_domain):
@@ -473,11 +471,11 @@ class ExtaLifeVirtualSensor(ExtaLifeSensorBase):
         for k, v in override.items():           # pylint: disable=unused-variable
             setattr(self._config, k, v)
 
-    def get_unique_id(self) -> str:
+    def _get_unique_id(self) -> str:
         """Override return a unique ID.
         This will add channel attribute path to uniquely identify the entity"""
 
-        super_id = super().get_unique_id()
+        super_id = super()._get_unique_id()
         return f"{super_id}-{self._virtual_prop.get(VIRTUAL_SENSOR_PATH)}"
 
     @staticmethod

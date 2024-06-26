@@ -9,6 +9,11 @@
           "disconnected": "mdi:cube-off-outline"
         }
       }
+    },
+    "update": {
+      "extalife": {
+        "default": "mdi:chip"
+      }
     }
   },
   "services": {

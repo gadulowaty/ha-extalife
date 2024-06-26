@@ -15,9 +15,9 @@
           "password": "Hasło"
         },
         "data_description": {
-          "controller_ip": "Adres DNS lub IP kontrolera EFC-01. Użyj znaku \":\", aby podać port kontrolera.",
+          "controller_ip": "Adres DNS lub IP kontrolera EFC-01. Użyj znaku dwukropka, aby podać port kontrolera.",
           "user": "Nazwa użytkownika, która będzie wykorzystywana do logowania do kontrolera EFC-01",
-          "password": "Hasło użytkownika, która będzie wykorzystywana do logowania do kontrolera EFC-01"
+          "password": "Hasło użytkownika, które będzie wykorzystywane do logowania do kontrolera EFC-01"
         }
       },
       "reconfigure_confirm": {
@@ -29,13 +29,13 @@
           "password": "Hasło"
         },
         "data_description": {
-          "controller_ip": "Adres DNS lub IP kontrolera EFC-01. Użyj znaku \":\", aby podać port kontrolera.",
+          "controller_ip": "Adres DNS lub IP kontrolera EFC-01. Użyj znaku dwukropka, aby podać port kontrolera.",
           "user": "Nazwa użytkownika, która będzie wykorzystywana do logowania do kontrolera EFC-01",
-          "password": "Hasło użytkownika, która będzie wykorzystywana do logowania do kontrolera EFC-01"
+          "password": "Hasło użytkownika, które będzie wykorzystywane do logowania do kontrolera EFC-01"
         }
       },
       "reauth_confirm": {
-        "title": "Integracja Exta Life - dane logowania",
+        "title": "Integracja Exta Life: dane logowania",
         "description": "Wymagana aktualizacja danych logowania dla \"{title}\" ({host}).\nIntegracja Exta Life nie mogła zalogować się poprawnie do kontrolera EFC-01.",
         "data": {
           "user": "Użytkownik",
@@ -43,11 +43,11 @@
         },
         "data_description": {
           "user": "Nazwa użytkownika, która będzie wykorzystywana do logowania do kontrolera EFC-01",
-          "password": "Hasło użytkownika, która będzie wykorzystywana do logowania do kontrolera EFC-01"
+          "password": "Hasło użytkownika, które będzie wykorzystywane do logowania do kontrolera EFC-01"
         }
       },
       "title": {
-        "title": "Nazwij tą konfiguracje (opcjonalne)",
+        "title": "Nazwij tę konfigurację (opcjonalne)",
         "description": "Opcjonalnie nadaj nazwę tej konfiguracji e.g. Dom, Mieszkanie, Domek letniskowy lub pozostaw nazwę pustą. Domyślnie zostanie użyta nazwa odczytana z kontrolera. Nazwa pomoże rozróżnić konfiguracje zdefiniowane dla wielu kontrolerów.",
         "data": {
           "title": "Nazwa"
@@ -61,7 +61,7 @@
     "error": {
       "extalife_no_connection": "Nie można połączyć się z kontrolerem EFC-01. Sprawdź adres IP kontrolera",
       "extalife_invalid_cred": "Nieprawidłowa nazwa użytkownika lub hasło.\nPopraw dane i spróbuj ponownie",
-      "extalife_login_failed": "Logowanie nie powiodło się. Sprawdź plik dziennika, aby uzyskać więcej informacji",
+      "extalife_login_failed": "Podczas logowania wystąpiły błędy. Sprawdź plik dziennika, aby uzyskać więcej informacji",
       "extalife_flow_error": "Nie można kontynuować konfiguracji kontrolera EFC-01. Urządzenie już zostało dodane",
       "extalife_unk_error": "Wystąpił nieokreślony błąd. Sprawdź plik dziennika, aby uzyskać więcej informacji"
     }
@@ -72,7 +72,8 @@
         "title": "Konfiguracja \"{title}\": krok 1 z 3",
         "description": "Ustawienia ogólne",
         "data": {
-          "poll_interval": "Interwał czasowy do odpytywania o aktualny stan urządzeń (minuty)",
+          "poll_interval": "Czas pomiędzy odpytaniem EFC o stan urządzeń (minuty)",
+          "version_interval": "Czas pomiędzy sprawdzeniem dostępności nowego oprogramowania (godziny)",
           "disable_not_responding": "Zmień kolor encji na szary, gdy urządzenie nie odpowiada\n(tak jak w aplikacji Exta Life)"
         }
       },
@@ -182,6 +183,12 @@
           },
           "software_version": {
             "name": "Wersja oprogramowania"
+          },
+          "ver_check_last": {
+            "name": "Ostatnie sprawdzenie aktualizacji"
+          },
+          "ver_check_next": {
+            "name": "Następne sprawdzenie aktualizacji"
           }
         }
       }
@@ -212,6 +219,14 @@
             "name": "Synchronizacja naruszenia"
           }
         }
+      }
+    },
+    "button": {
+      "restart": {
+        "name": "Uruchom ponownie"
+      },
+      "update": {
+        "name": "Sprawdź aktualizacje"
       }
     },
     "climate": {
@@ -299,6 +314,25 @@
           }
         }
       }
+    },
+    "update": {
+      "extalife": {
+        "title": "Uwagi do wersji",
+        "name": "Oprogramowanie",
+        "state": {
+          "unknown": "HA błąd: brak tłumaczenia",
+          "on": "Nowa wersja dostępna",
+          "off": "Aktualne"
+        },
+        "state_attributes": {
+          "installed_version": {
+            "name": "Bieżąca wersja"
+          },
+          "latest_version": {
+            "name": "Dostępna wersja"
+          }
+        }
+      }
     }
   },
   "selector": {
@@ -326,11 +360,11 @@
         },
         "retention": {
           "name": "Retencja",
-          "description": "Określa ile ostatnich kopii zapasowych ma być zatrzymanych, jeżeli zostanie wskazana wartość '0' to rotacja kopii nie będzie wykonana."
+          "description": "Określa, ile ostatnich kopii zapasowych ma być zatrzymanych, jeżeli zostanie wskazana wartość '0' to rotacja kopii nie będzie wykonana."
         },
         "path": {
           "name": "Ścieżka",
-          "description": "Ścieżka do katalogu, gdzie zostanie zapisany plik kopii zapasowej. Jeżeli ścieżka pozostanie pusta, wtedy plik zostanie zapisany w katalogu konfiguracji HA w katalogu extalife. W przypadku podania ścieżki względnej zostanie ona dołączona do ścieżki konfiguracji HA. Przy ścieżce bezwzględnej plik kopii zostanie zapisany dokładnie we wskazanym miejscu. Jeżeli ścieżka docelowa nie istnieje to zostanie utworzona."
+          "description": "Ścieżka do folderu, gdzie zostanie zapisany plik kopii zapasowej. Jeżeli ścieżka pozostanie pusta, wtedy plik zostanie zapisany w katalogu konfiguracji HA w katalogu extalife. W przypadku podania ścieżki względnej zostanie ona dołączona do ścieżki konfiguracji HA. Przy ścieżce bezwzględnej plik kopii zostanie zapisany dokładnie we wskazanym miejscu. Jeżeli ścieżka docelowa nie istnieje, to zostanie utworzona."
         }
       }
     },
@@ -363,6 +397,16 @@
           "description": "Identyfikator encji kontrolera"
         }
       }
+    }
+  },
+  "logbook": {
+    "update_failed": "aktualizacja do wersji {latest_version} nie powiodła się",
+    "update_success": "zostało zaktualizowane do wersji {installed_version}"
+  },
+  "notifications": {
+    "update_failed": {
+      "title":"Exta Life: Aktualizacja",
+      "message": "Aktualizacja urządzenia się nie powiodła.\n\nKod błędu {error}:{err_str}. Aby uzyskać więcej informacji, kliknij {link}"
     }
   }
 }

@@ -1,6 +1,5 @@
 """Support for Exta Life binary sensor devices e.g. leakage sensor, door/window open sensor"""
 import logging
-
 from typing import (
     Any,
     Mapping
@@ -14,15 +13,11 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
-)
 
-from . import ExtaLifeChannel
+from . import ExtaLifeChannelNamed
 from .helpers.const import DOMAIN_VIRTUAL_BINARY_SENSOR_SENSOR
 from .helpers.core import Core
-from .pyextalife import (       # pylint: disable=syntax-error
+from .pyextalife import (  # pylint: disable=syntax-error
     DEVICE_ARR_SENS_WATER,
     DEVICE_ARR_SENS_MOTION,
     DEVICE_ARR_SENS_OPEN_CLOSE,
@@ -45,7 +40,7 @@ async def async_setup_entry(
         channels: list[dict[str, Any]] = core.get_channels(DOMAIN_BINARY_SENSOR)
         _LOGGER.debug(f"Discovery: ({DOMAIN_BINARY_SENSOR}): {channels}")
         if channels:
-            async_add_entities([ExtaLifeBinarySensor(channel, config_entry) for channel in channels])
+            async_add_entities([ExtaLifeBinarySensorNamed(channel, config_entry) for channel in channels])
 
         core.pop_channels(DOMAIN_BINARY_SENSOR)
         return None
@@ -53,7 +48,7 @@ async def async_setup_entry(
     await core.platform_register(DOMAIN_BINARY_SENSOR, async_load_entities)
 
 
-class ExtaLifeBinarySensor(ExtaLifeChannel, BinarySensorEntity):
+class ExtaLifeBinarySensorNamed(ExtaLifeChannelNamed, BinarySensorEntity):
     """Representation of an ExtaLife binary sensors"""
 
     def __init__(self, channel, config_entry: ConfigEntry):

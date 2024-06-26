@@ -1,13 +1,9 @@
 import logging
-
 from typing import (
     Any,
     Mapping,
 )
 
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.components.climate import (
     ClimateEntity,
     ClimateEntityFeature,
@@ -17,9 +13,12 @@ from homeassistant.components.climate.const import (
     HVACAction,
     HVACMode,
 )
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import ExtaLifeChannel
+from . import ExtaLifeChannelNamed
 from .helpers.const import DOMAIN_VIRTUAL_CLIMATE_SENSOR
 from .helpers.core import Core
 from .pyextalife import (
@@ -84,7 +83,7 @@ async def async_setup_entry(
         channels: list[dict[str, Any]] = core.get_channels(DOMAIN_CLIMATE)
         _LOGGER.debug(f"Discovery ({DOMAIN_CLIMATE}): {channels}")
         if channels:
-            async_add_entities([ExtaLifeClimate(channel, config_entry) for channel in channels])
+            async_add_entities([ExtaLifeClimateNamed(channel, config_entry) for channel in channels])
 
         core.pop_channels(DOMAIN_CLIMATE)
         return None
@@ -92,7 +91,7 @@ async def async_setup_entry(
     await core.platform_register(DOMAIN_CLIMATE, async_load_entities)
 
 
-class ExtaLifeClimate(ExtaLifeChannel, ClimateEntity):
+class ExtaLifeClimateNamed(ExtaLifeChannelNamed, ClimateEntity):
     """Representation of Exta Life Thermostat."""
 
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):

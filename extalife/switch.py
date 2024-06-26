@@ -4,19 +4,15 @@ from typing import (
     Any,
 )
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
 from homeassistant.components.switch import (
     SwitchEntity,
     DOMAIN as DOMAIN_SWITCH
 )
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
-)
 
-from . import ExtaLifeChannel
+from . import ExtaLifeChannelNamed
 from .helpers.const import DOMAIN_VIRTUAL_SWITCH_SENSOR
 from .helpers.core import Core
 from .pyextalife import (
@@ -40,7 +36,7 @@ async def async_setup_entry(
         channels: list[dict[str, Any]] = core.get_channels(DOMAIN_SWITCH)
         _LOGGER.debug(f"Discovery ({DOMAIN_SWITCH}): {channels}")
         if channels:
-            async_add_entities([ExtaLifeSwitch(channel, config_entry) for channel in channels])
+            async_add_entities([ExtaLifeSwitchNamed(channel, config_entry) for channel in channels])
 
         core.pop_channels(DOMAIN_SWITCH)
         return None
@@ -48,7 +44,7 @@ async def async_setup_entry(
     await core.platform_register(DOMAIN_SWITCH, async_load_entities)
 
 
-class ExtaLifeSwitch(ExtaLifeChannel, SwitchEntity):
+class ExtaLifeSwitchNamed(ExtaLifeChannelNamed, SwitchEntity):
     """Representation of an ExtaLife Switch."""
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
         super().__init__(config_entry, channel)

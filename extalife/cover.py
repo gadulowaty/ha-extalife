@@ -4,8 +4,6 @@ from typing import (
     Any,
 )
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
 from homeassistant.components.cover import (
     CoverDeviceClass,
     CoverEntity,
@@ -13,13 +11,11 @@ from homeassistant.components.cover import (
     ATTR_POSITION,
     DOMAIN as DOMAIN_COVER,
 )
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
-)
 
-from . import ExtaLifeChannel
+from . import ExtaLifeChannelNamed
 from .helpers.const import (
     OPTIONS_COVER_INVERTED_CONTROL,
     DOMAIN_VIRTUAL_COVER_SENSOR
@@ -54,7 +50,7 @@ async def async_setup_entry(
         channels: list[dict[str, Any]] = core.get_channels(DOMAIN_COVER)
         _LOGGER.debug(f"Discovery ({DOMAIN_COVER}): {channels}")
         if channels:
-            async_add_entities([ExtaLifeCover(channel, config_entry) for channel in channels])
+            async_add_entities([ExtaLifeCoverNamed(channel, config_entry) for channel in channels])
 
         core.pop_channels(DOMAIN_COVER)
         return None
@@ -62,7 +58,7 @@ async def async_setup_entry(
     await core.platform_register(DOMAIN_COVER, async_load_entities)
 
 
-class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
+class ExtaLifeCoverNamed(ExtaLifeChannelNamed, CoverEntity):
     """Representation of ExtaLife Cover"""
 
     def __init__(self, channel: dict[str, Any], config_entry: ConfigEntry):
@@ -141,7 +137,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
         gate_state = self.channel_data.get("channel_state")
 
         if pos is not None:
-            expect = ExtaLifeCover.POS_CLOSED
+            expect = ExtaLifeCoverNamed.POS_CLOSED
             _LOGGER.debug(f"is_closed for cover: {self.entity_id}. model: {pos}, returned to HA: {pos == expect}")
             return pos == expect
 
@@ -156,7 +152,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
         if self.device_class == CoverDeviceClass.GATE or self.device_class == CoverDeviceClass.DOOR:
             pos = 1
         else:
-            pos = ExtaLifeCover.POS_OPEN
+            pos = ExtaLifeCoverNamed.POS_OPEN
 
         if not self.is_exta_free:
             if self.device_class != CoverDeviceClass.GATE and self.device_class != CoverDeviceClass.DOOR:
@@ -176,7 +172,7 @@ class ExtaLifeCover(ExtaLifeChannel, CoverEntity):
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover."""
         data = self.channel_data
-        pos = ExtaLifeCover.POS_CLOSED
+        pos = ExtaLifeCoverNamed.POS_CLOSED
         if not self.is_exta_free:
             if self.device_class != CoverDeviceClass.GATE and self.device_class != CoverDeviceClass.DOOR:
                 action = ExtaLifeAction.EXTA_LIFE_SET_POS

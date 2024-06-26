@@ -25,7 +25,7 @@
         },
         "data_description": {
           "controller_ip": "DNS or IP address of EFC-01 controller. Use \":\" to specify port number.",
-          "user": "User name that should be used to log into EFC-01 controller",
+          "user": "Username that should be used to log into EFC-01 controller",
           "password": "User password that should be used to log into EFC-01 controller"
         }
       },
@@ -37,7 +37,7 @@
           "password": "Password"
         },
         "data_description": {
-          "user": "User name that should be used to log into EFC-01 controller",
+          "user": "Username that should be used to log into EFC-01 controller",
           "password": "User password that should be used to log into EFC-01 controller"
         }
       },
@@ -68,6 +68,7 @@
         "description": "General settings",
         "data": {
           "poll_interval": "Status polling interval",
+          "version_interval": "New version polling check interval",
           "disable_not_responding": "Disable entities when device is not responding.\n(just as in the 'Exta Life' app)"
         }
       },
@@ -95,7 +96,7 @@
       "button_up": "\"{subtype}\" button pressed",
       "button_down": "\"{subtype}\" button released",
       "button_single_click": "\"{subtype}\" button single clicked (pushed and released)",
-      "button_double_click": "\"{subtype}\" button double clicked",
+      "button_double_click": "\"{subtype}\" button double-clicked",
       "button_triple_click": "\"{subtype}\" button triple clicked",
       "button_long_press": "\"{subtype}\" button released after long press"
     },
@@ -177,6 +178,12 @@
           },
           "software_version": {
             "name": "Firmware version"
+          },
+          "ver_check_last": {
+            "name": "Update last check"
+          },
+          "ver_check_next": {
+            "name": "Update next check"
           }
         }
       }
@@ -207,6 +214,14 @@
             "name": "Tamper last synchronization"
           }
         }
+      }
+    },
+    "button": {
+      "restart": {
+        "name": "Restart"
+      },
+      "update": {
+        "name": "Check updates"
       }
     },
     "climate": {
@@ -279,7 +294,7 @@
         }
       }
     },
-     "switch": {
+    "switch": {
       "extalife": {
         "state_attributes": {
           "channel_id": {
@@ -292,6 +307,17 @@
               "false": "works correctly"
             }
           }
+        }
+      }
+    },
+    "update": {
+      "extalife": {
+        "title": "Release notes for",
+        "name": "Firmware",
+        "state": {
+          "unknown": "HA error: missing translation",
+          "on": "New version available",
+          "off": "Up to date"
         }
       }
     }
@@ -358,6 +384,16 @@
           "description": "Entity ID representing controller"
         }
       }
+    }
+  },
+  "logbook": {
+    "update_failed": "update to version {latest_version} failed",
+    "update_success": "has been updated to version {installed_version}"
+  },
+  "notifications": {
+    "update_failed": {
+      "title":"Exta Life: Firmware update",
+      "message": "Device update failed. Error code {error}:{err_str}. For more information click {link}"
     }
   }
 }
