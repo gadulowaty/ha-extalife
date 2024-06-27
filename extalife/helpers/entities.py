@@ -21,6 +21,7 @@ from .const import (
     SIGNAL_CHANNEL_NOTIF_STATE_UPDATED,
     SIGNAL_DEVICE_NOTIF_CONFIG_UPDATED,
     OPTIONS_GENERAL_DISABLE_NOT_RESPONDING,
+    URL_FIRMWARE_HTML,
     VIRTUAL_SENSOR_CHN_FIELD,
     VIRTUAL_SENSOR_DEV_CLS,
     VIRTUAL_SENSOR_PATH,
@@ -38,7 +39,8 @@ from ..pyextalife import (
     ExtaLifeMap,
     PRODUCT_MANUFACTURER,
     PRODUCT_SERIES_EXTA_LIFE,
-    PRODUCT_SERIES_EXTA_FREE
+    PRODUCT_SERIES_EXTA_FREE,
+    DEVICE_ARR_ALL_TRANSMITTER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -137,13 +139,17 @@ class ExtaLifeEntity(Entity):
         else:
             identify = str(serial_no)
 
-        return DeviceInfo(
+        device_info: DeviceInfo = DeviceInfo(
             identifiers={(DOMAIN, identify)},
             name=f"{PRODUCT_MANUFACTURER} {prod_series} {self.device_model_name}",
             manufacturer=PRODUCT_MANUFACTURER,
             model=self.device_model_name,
             serial_number=f"{serial_no:06X}"
         )
+        if not self.is_exta_free and self.device_model not in DEVICE_ARR_ALL_TRANSMITTER:
+            device_info.setdefault("configuration_url", f"{URL_FIRMWARE_HTML}?device={self.device_model.name}")
+
+        return device_info
 
     @property
     def device_model(self) -> ExtaLifeDeviceModel:
@@ -521,6 +527,7 @@ class ExtaLifeController(ExtaLifeEntity):
 
         device_info = super().device_info
         device_info.setdefault("connections", {(dr.CONNECTION_NETWORK_MAC, self.mac)})
+        # device_info.setdefault("entry_type", DeviceEntryType.SERVICE)
         device_info.update({"sw_version": self.controller.version_installed})
 
         return device_info

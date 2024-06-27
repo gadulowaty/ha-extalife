@@ -21,8 +21,11 @@ OPTIONS_GENERAL_VER_INTERVAL = "version_interval"
 
 OPTIONS_GENERAL_DISABLE_NOT_RESPONDING = "disable_not_responding"
 
-URL_CHANGELOG_HTML: str = "https://extalife.otoloto.me/changelog/"
-URL_CHANGELOG_JSON: str = "https://extalife.otoloto.me/changelog/?json"
+URL_OTO_LOTO_ME: str = "https://extalife.otoloto.me"
+URL_CHANGELOG_HTML: str = f"{URL_OTO_LOTO_ME}/changelog/"
+URL_CHANGELOG_JSON: str = f"{URL_OTO_LOTO_ME}/changelog/?json"
+URL_FIRMWARE_HTML: str = f"{URL_OTO_LOTO_ME}/firmware/"
+
 URL_IP_ECHO_NET: str = "https://ipecho.net/plain"
 
 CONF_OPTIONS = "options"  # additional per-platform configuration

@@ -57,15 +57,6 @@ MAP_NOTIF_CMD_TO_EVENT = {
 _LOGGER = logging.getLogger(__name__)
 
 
-# noinspection PyUnusedLocal
-async def options_change_callback(hass: HomeAssistant, config_entry: ConfigEntry):
-    """Options update listener"""
-
-    core = Core.get(config_entry.entry_id)
-    await core.channel_manager.async_status_polling_task_setup(False)
-    await core.channel_manager.async_version_polling_task_setup(False)
-
-
 class Core:
     _inst: dict[str, CoreType] = dict()
     _hass: HomeAssistant = None
@@ -126,7 +117,7 @@ class Core:
         self._signals = {}
 
         self._options_change_remove_callback = config_entry.add_update_listener(
-            options_change_callback
+            self._options_change_callback
         )
 
         self._controller_entity: ExtaLifeControllerType | None = None
@@ -134,6 +125,13 @@ class Core:
         self._storage = {}
 
         self._is_unloading = False
+
+    # noinspection PyUnusedLocal
+    async def _options_change_callback(self, hass: HomeAssistant, config_entry: ConfigEntry):
+        """Options update listener"""
+
+        await self.channel_manager.async_status_polling_task_setup(False)
+        await self.channel_manager.async_version_polling_task_setup(False)
 
     async def platform_load(self, platform: str) -> bool:
         """Check if platform has been loaded if so will load awaiting channels and return true otherwise false"""

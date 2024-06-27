@@ -1,11 +1,11 @@
 """Config flow to configure Exta Life component."""
+from __future__ import annotations
 
 import logging
 from typing import (
     Any,
 )
 
-import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import (
@@ -18,6 +18,9 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import (
     AbortFlow,
+)
+from homeassistant.helpers import (
+    config_validation as cv,
 )
 from homeassistant.helpers.selector import (
     NumberSelector,
@@ -56,8 +59,25 @@ from .pyextalife import (
 _LOGGER = logging.getLogger(__name__)
 
 
-@config_entries.HANDLERS.register(DOMAIN)
-class ExtaLifeFlowHandler(ConfigFlow):
+def get_default_options() -> dict[str, Any]:
+
+    options = {}
+    options.setdefault(OPTIONS_GENERAL, {
+        OPTIONS_GENERAL_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
+        OPTIONS_GENERAL_VER_INTERVAL: DEFAULT_VER_INTERVAL,
+        OPTIONS_GENERAL_DISABLE_NOT_RESPONDING: True
+    })
+    options.setdefault(OPTIONS_LIGHT, {
+        OPTIONS_LIGHT_ICONS_LIST: DEVICE_ICON_ARR_LIGHT
+    })
+    options.setdefault(OPTIONS_COVER, {
+        OPTIONS_COVER_INVERTED_CONTROL: False
+    })
+    return options.copy()
+
+#  @config_entries.HANDLERS.register(DOMAIN)
+
+class ExtaLifeFlowHandler(ConfigFlow, domain=DOMAIN):
     """ExtaLife config flow."""
 
     VERSION = 2
@@ -355,23 +375,6 @@ class ExtaLifeFlowHandler(ConfigFlow):
 
         # initiate the flow as from GUI, call step `init`
         return await self.async_step_init()
-
-
-def get_default_options() -> dict[str, Any]:
-
-    options = {}
-    options.setdefault(OPTIONS_GENERAL, {
-        OPTIONS_GENERAL_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
-        OPTIONS_GENERAL_VER_INTERVAL: DEFAULT_VER_INTERVAL,
-        OPTIONS_GENERAL_DISABLE_NOT_RESPONDING: True
-    })
-    options.setdefault(OPTIONS_LIGHT, {
-        OPTIONS_LIGHT_ICONS_LIST: DEVICE_ICON_ARR_LIGHT
-    })
-    options.setdefault(OPTIONS_COVER, {
-        OPTIONS_COVER_INVERTED_CONTROL: False
-    })
-    return options.copy()
 
 
 class ExtaLifeOptionsFlowHandler(OptionsFlowWithConfigEntry):

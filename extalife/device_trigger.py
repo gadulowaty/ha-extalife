@@ -1,12 +1,15 @@
 """Provides device automations for Exta Life."""
-from typing import List
+from __future__ import annotations
+
+import logging
+from typing import (
+    Any,
+)
 
 import voluptuous as vol
-import logging
-
 from homeassistant.components.automation import AutomationActionType
-import homeassistant.components.homeassistant.triggers.event as event
 from homeassistant.components.device_automation import DEVICE_TRIGGER_BASE_SCHEMA
+from homeassistant.components.homeassistant.triggers import event
 from homeassistant.const import (
     CONF_DEVICE_ID,
     CONF_DOMAIN,
@@ -25,7 +28,7 @@ TRIGGER_SCHEMA = DEVICE_TRIGGER_BASE_SCHEMA.extend(
 )
 
 
-async def async_get_triggers(hass: HomeAssistant, device_id: str) -> List[dict] | None:
+async def async_get_triggers(hass: HomeAssistant, device_id: str) -> list[dict[str, Any]] | None:
     """List device triggers for Exta Life devices."""
     from .helpers.core import Core
     triggers = []

@@ -174,7 +174,7 @@ async def async_setup_entry(
         config_entry: ConfigEntry) -> bool:
     """Set up Exta Life component from a Config Entry"""
 
-    _LOGGER.debug(f"async_setup_entry(): starting for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
+    _LOGGER.debug(f"async_setup_entry: starting for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
 
     hass.data.setdefault(DOMAIN, {})
 
@@ -183,7 +183,7 @@ async def async_setup_entry(
 
     result = await async_initialize(hass, config_entry)
 
-    _LOGGER.debug(f"async_setup_entry(): finished for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
+    _LOGGER.debug(f"async_setup_entry: finished for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
 
     return result
 
@@ -194,12 +194,12 @@ async def async_unload_entry(
         config_entry: ConfigEntry) -> bool:
     """Unload a config entry: unload platform entities, stored data, deregister signal listeners"""
 
-    _LOGGER.debug(f"async_unload_entry(): starting for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
+    _LOGGER.debug(f"async_unload_entry: starting for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
 
     core = Core.get(config_entry.entry_id)
     result = await core.unload_entry_from_hass()
 
-    _LOGGER.debug(f"async_unload_entry(): finished for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
+    _LOGGER.debug(f"async_unload_entry: finished for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
 
     return result
 
@@ -249,15 +249,15 @@ async def async_initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bo
     password = config_entry.data[CONF_PASSWORD]
     controller_ip: str = config_entry.data[CONF_CONTROLLER_IP]
 
-    _LOGGER.debug(f"ExtaLife initializing '{config_entry.title}'... "
+    _LOGGER.debug(f"[{config_entry.title}] exta life initializing '{config_entry.title}'... "
                   f"[Debugger attached: {"YES" if ExtaLifeAPI.is_debugger_active() else "NO"}]")
 
     if controller_ip:
-        _LOGGER.debug(f"Trying to connect to controller using IP: {controller_ip}")
+        _LOGGER.debug(f"[{config_entry.title}] trying to connect to controller using IP: {controller_ip}")
         controller_host, controller_port = ExtaLifeConnParams.get_host_and_port(controller_ip)
         autodiscover: bool = False
     else:
-        _LOGGER.info("Controller IP is not specified. Will use autodiscovery mode")
+        _LOGGER.info(f"[{config_entry.title}] controller IP is not specified. Will use autodiscovery mode")
         controller_host = ""
         controller_port = 0
         autodiscover: bool = True
@@ -271,7 +271,7 @@ async def async_initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bo
         if isinstance(err, ExtaLifeCmdError):
             raise ConfigEntryAuthFailed(err.message)
         else:
-            _LOGGER.error(f"Unable to connect to EFC-01 @ {controller_ip}, {err.message}")
+            _LOGGER.error(f"[{config_entry.title}] unable to connect to EFC @ {controller_ip}, {err.message}")
             raise ConfigEntryNotReady
 
         # await core.unload_entry_from_hass()
@@ -283,12 +283,12 @@ async def async_initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bo
         cur_data = {**config_entry.data}
         cur_data.update({CONF_CONTROLLER_IP: ExtaLifeConnParams.get_addr(controller.host, controller.port)})
         hass.config_entries.async_update_entry(config_entry, data=cur_data)
-        _LOGGER.info(f"Controller IP updated to: {controller.host}")
+        _LOGGER.info(f"[{config_entry.title}] controller IP updated to: {controller.host}")
 
     if controller.version_installed is not None:
-        _LOGGER.debug(f"EFC-01 Software version: {controller.version_installed}")
+        _LOGGER.debug(f"[{config_entry.title}] EFC software version: {controller.version_installed}")
     else:
-        _LOGGER.error("Error communicating with the EFC-01 controller.")
+        _LOGGER.error("[{config_entry.title}] error communicating with the EFC-01 controller.")
         return False
 
     await core.register_controller()
@@ -296,7 +296,7 @@ async def async_initialize(hass: HomeAssistant, config_entry: ConfigEntry) -> bo
     # publish services to HA service registry
     await core.async_register_services()
 
-    _LOGGER.info(f"Exta Life integration setup for '{config_entry.title}' finished successfully!")
+    _LOGGER.info(f"[{config_entry.title}] exta life integration setup finished successfully!")
     return True
 
 
@@ -341,7 +341,7 @@ class ChannelDataManager:
     def channel_on_notify(self, data: ExtaLifeData) -> None:
         # TODO: missing one-liner
 
-        _LOGGER.debug(f"Received channel status change notification from controller: {data}")
+        _LOGGER.debug(f"[{self._core.config_entry.title}] channel_on_notify: received {data}")
 
         channel_id: str = ExtaLifeAPI.device_make_channel_id(data)
 
@@ -392,7 +392,7 @@ class ChannelDataManager:
     def device_on_notify(self, data: ExtaLifeData) -> None:
         # TODO: missing one-liner
 
-        _LOGGER.debug(f"on_device_notify: Received device config change notification: {data}")
+        _LOGGER.debug(f"[{self._core.config_entry.title}] device_on_notify: received {data}")
 
         device_id = data.get("id", -1)
         signal: str = ExtaLifeDevice.signal_get_device_notification_id(device_id)
@@ -416,7 +416,7 @@ class ChannelDataManager:
 
         if self._status_polling_task_stop is not None:
             self._status_polling_task_stop()
-            _LOGGER.debug(f"[{self._core.config_entry.title}] Status polling task has been removed")
+            _LOGGER.debug(f"[{self._core.config_entry.title}] status polling task has been removed")
 
         self._status_polling_task_stop = None
 
@@ -428,7 +428,7 @@ class ChannelDataManager:
             OPTIONS_GENERAL_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
         )
 
-        _LOGGER.debug(f"[{self._core.config_entry.title}] Periodic status poll task interval "
+        _LOGGER.debug(f"[{self._core.config_entry.title}] periodic status poll task interval "
                       f"has been set to {status_poll_interval} minute(s)")
         self._status_polling_task_stop = self._core.async_track_time_interval(
             self._async_status_polling_task, timedelta(minutes=status_poll_interval)
@@ -440,7 +440,7 @@ class ChannelDataManager:
         This method is called from HA task scheduler via async_track_time_interval"""
 
         # use Exta Life TCP communication class
-        _LOGGER.debug(f"[{self._core.config_entry.title}] Executing EFC-01 status polling task")
+        _LOGGER.debug(f"[{self._core.config_entry.title}] executing EFC-01 status polling task")
 
         # if connection error or other - will receive None
         # otherwise it contains a list of channels
@@ -471,7 +471,7 @@ class ChannelDataManager:
 
                 updatable: bool = (_device_type not in DEVICE_ARR_ALL_TRANSMITTER and
                                    _device_type < ExtaLifeDeviceModel.EXTA_FREE_FIRST)
-                _LOGGER.debug(f"[{self._core.config_entry.title}] Found new device: "
+                _LOGGER.debug(f"[{self._core.config_entry.title}] new device: "
                               f"serial_no={_serial_no:06x}; type={_device_type.name}, "
                               f"update={"YES" if updatable else "NO"}")
 
