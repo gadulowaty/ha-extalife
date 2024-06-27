@@ -14,21 +14,28 @@ from typing import (
     Callable,
 )
 
+import homeassistant.const
 import requests
 from homeassistant.components.logbook import async_log_entry
 from homeassistant.components.persistent_notification import async_create as async_create_notification
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STOP,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.loader import (
+    Integration,
+)
 
 from .const import (
     DATA_CORE,
     DOMAIN,
     CONF_EXTALIFE_EVENT_SCENE,
-    URL_CHANGELOG_JSON
+    URL_CHANGELOG_JSON,
+    URL_IP_ECHO_NET,
 )
 from .services import ExtaLifeServices
 from .typing import (
@@ -67,10 +74,10 @@ class Core:
     _is_stopping = False
 
     @classmethod
-    def create(cls, hass: HomeAssistant, config_entry: ConfigEntry) -> CoreType:
+    def create(cls, hass: HomeAssistant, integration: Integration, config_entry: ConfigEntry) -> CoreType:
         """Create Core instance for a given Config Entry"""
         cls._hass = hass
-        inst = Core(config_entry)
+        inst = Core(integration, config_entry)
 
         hass.data[DOMAIN][DATA_CORE] = cls._inst
 
@@ -88,12 +95,13 @@ class Core:
         """Return HomeAssistant instance"""
         return cls._hass
 
-    def __init__(self, config_entry: ConfigEntry):
+    def __init__(self, integration: Integration, config_entry: ConfigEntry):
         """initialize instance"""
         from .device import DeviceManager
         from ..transmitter import TransmitterManager
         from .. import ChannelDataManager
 
+        self._integration = integration
         self._ver_check_web: bool = False
         self._inst[config_entry.entry_id] = self
         self._changelog: dict[str, Any] = {"next": 0, "data": []}
@@ -321,17 +329,16 @@ class Core:
     async def get_external_ip(self) -> str:
         """returns HA external ip"""
 
-        url: str = "https://ipecho.net/plain"
-        headers: dict[str, str] = {
-            "Content-Type": "text/plain",
-            "Accept": "text/plain",
-        }
-        timeout = 5, 5
-
         def http_fetch_ip() -> str:
             # noinspection PyBroadException
             try:
-                request = requests.get(url, headers=headers, timeout=timeout)
+                timeout = 5, 5
+                headers: dict[str, str] = {
+                    "Content-Type": "text/plain",
+                    "Accept": "text/plain",
+                    "Agent": self.http_agent,
+                }
+                request = requests.get(URL_IP_ECHO_NET, headers=headers, timeout=timeout)
                 return request.content.decode()
 
             except Exception:
@@ -355,6 +362,12 @@ class Core:
     @property
     def hass(self) -> HomeAssistant:
         return Core._hass
+
+    @property
+    def http_agent(self) -> str:
+
+        return f"{self._config_entry.domain}/{self._integration.version} "\
+               f"({homeassistant.const.APPLICATION_NAME}/{homeassistant.const.__version__})"
 
     @property
     def device_manager(self) -> DeviceManagerType:
@@ -545,6 +558,7 @@ class Core:
             headers: dict[str, str] = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                "User-Agent": self.http_agent
             }
             timeout = 3, 3
             request = requests.get(URL_CHANGELOG_JSON, headers=headers, timeout=timeout)

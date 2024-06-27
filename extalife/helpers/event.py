@@ -1,6 +1,9 @@
 import logging
 from datetime import datetime, timedelta
 
+from homeassistant.const import (
+    CONF_TYPE
+)
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
@@ -18,11 +21,9 @@ from .const import (
     TRIGGER_BUTTON_TRIPLE_CLICK,
     TRIGGER_SUBTYPE, TRIGGER_TYPE
 )
-
-from .device import Device
 from .core import Core
+from .device import Device
 from ..pyextalife import DEVICE_ARR_ALL_TRANSMITTER
-
 
 _LOGGER = logging.getLogger(__name__)
 

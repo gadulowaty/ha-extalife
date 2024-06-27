@@ -27,6 +27,10 @@ from homeassistant.helpers import (
     config_validation as cv,
 )
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import (
+    Integration,
+    async_get_integration,
+)
 
 from .config_flow import get_default_options
 from .helpers.const import (
@@ -40,8 +44,6 @@ from .helpers.const import (
     DEFAULT_VER_INTERVAL,
     OPTIONS_COVER_INVERTED_CONTROL,
     SIGNAL_DATA_UPDATED,
-    SIGNAL_CHANNEL_NOTIF_STATE_UPDATED,
-    SIGNAL_DEVICE_NOTIF_CONFIG_UPDATED,
     DOMAIN_TRANSMITTER,
     CONF_OPTIONS,
     OPTIONS_LIGHT,
@@ -50,11 +52,6 @@ from .helpers.const import (
     OPTIONS_GENERAL,
     OPTIONS_GENERAL_POLL_INTERVAL,
     OPTIONS_GENERAL_VER_INTERVAL,
-    OPTIONS_GENERAL_DISABLE_NOT_RESPONDING,
-    VIRTUAL_SENSOR_CHN_FIELD,
-    VIRTUAL_SENSOR_DEV_CLS,
-    VIRTUAL_SENSOR_PATH,
-    VIRTUAL_SENSOR_ALLOWED_CHANNELS
 )
 from .helpers.core import Core
 from .helpers.entities import (
@@ -67,8 +64,6 @@ from .pyextalife import (
     ExtaLifeConnParams,
     ExtaLifeData,
     ExtaLifeDeviceModel,
-    ExtaLifeDeviceModelName,
-    ExtaLifeMap,
     ExtaLifeError,
     ExtaLifeCmdError,
     DEVICE_ARR_ALL_SWITCH,
@@ -80,9 +75,6 @@ from .pyextalife import (
     DEVICE_ARR_ALL_SENSOR_MULTI,
     DEVICE_ARR_ALL_TRANSMITTER,
     DEVICE_ARR_ALL_IGNORE,
-    PRODUCT_MANUFACTURER,
-    PRODUCT_SERIES_EXTA_LIFE,
-    PRODUCT_SERIES_EXTA_FREE,
     EFC01_EXTA_APP_ID
 )
 
@@ -185,7 +177,10 @@ async def async_setup_entry(
     _LOGGER.debug(f"async_setup_entry(): starting for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")
 
     hass.data.setdefault(DOMAIN, {})
-    Core.create(hass, config_entry)
+
+    integration: Integration = await async_get_integration(hass, DOMAIN)
+    Core.create(hass, integration, config_entry)
+
     result = await async_initialize(hass, config_entry)
 
     _LOGGER.debug(f"async_setup_entry(): finished for '{config_entry.title}' (entry_id='{config_entry.entry_id}')")

@@ -23,6 +23,7 @@ OPTIONS_GENERAL_DISABLE_NOT_RESPONDING = "disable_not_responding"
 
 URL_CHANGELOG_HTML: str = "https://extalife.otoloto.me/changelog/"
 URL_CHANGELOG_JSON: str = "https://extalife.otoloto.me/changelog/?json"
+URL_IP_ECHO_NET: str = "https://ipecho.net/plain"
 
 CONF_OPTIONS = "options"  # additional per-platform configuration
 OPTIONS_GENERAL = "general"  # general settings

@@ -96,7 +96,6 @@ class ExtaLifeEntity(Entity):
     def get_placeholder(self) -> dict[str, str]:
         return {}
 
-
     @property
     def channel_manager(self) -> ChannelDataManagerType:
         """Return ChannelDataManager object"""
