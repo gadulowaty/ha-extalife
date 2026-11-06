@@ -227,6 +227,7 @@ class ExtaLifeDevice(ExtaLifeEntity):
         """Register device in Device Registry"""
         device_info = super().device_info
         if self.device_model != ExtaLifeDeviceModel.EFC01:
+            # device_info.via_device_id = self.controller.device_id
             device_info.via_device = (DOMAIN, self.controller.mac)
         return device_info
 
