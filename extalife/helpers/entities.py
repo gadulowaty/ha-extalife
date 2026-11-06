@@ -151,7 +151,7 @@ class ExtaLifeEntity(Entity):
             serial_number=f"{serial_no:06X} ({serial_no})"
         )
         if not self.is_exta_free and self.device_model not in DEVICE_ARR_ALL_TRANSMITTER:
-            device_info.setdefault("configuration_url", f"{URL_FIRMWARE_HTML}?device={self.device_model.name}")
+            device_info.configuration_url =  f"{URL_FIRMWARE_HTML}?device={self.device_model.name}"
 
         return device_info
 
@@ -227,7 +227,7 @@ class ExtaLifeDevice(ExtaLifeEntity):
         """Register device in Device Registry"""
         device_info = super().device_info
         if self.device_model != ExtaLifeDeviceModel.EFC01:
-            device_info.setdefault("via_device", (DOMAIN, self.controller.mac))
+            device_info.via_device = (DOMAIN, self.controller.mac)
         return device_info
 
 
@@ -337,7 +337,7 @@ class ExtaLifeChannel(ExtaLifeEntity):
     def device_info(self) -> DeviceInfo | None:
         """Register device in Device Registry"""
         device_info = super().device_info
-        device_info.setdefault("via_device", (DOMAIN, self.controller.mac))
+        device_info.via_device = (DOMAIN, self.controller.mac)
         return device_info
 
     @property
@@ -530,7 +530,7 @@ class ExtaLifeController(ExtaLifeEntity):
         """Register controller in Device Registry"""
 
         device_info = super().device_info
-        device_info.setdefault("connections", {(dr.CONNECTION_NETWORK_MAC, self.mac)})
+        device_info.connections = {(dr.CONNECTION_NETWORK_MAC, self.mac)}
         # device_info.setdefault("entry_type", DeviceEntryType.SERVICE)
         device_info.update({"sw_version": self.controller.version_installed})
 
